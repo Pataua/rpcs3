@@ -1,16 +1,17 @@
 #pragma once
 
 #include <QPainter>
-#include <QAbstractItemDelegate>
+#include <QStyledItemDelegate>
 
-class game_list_grid_delegate : public QAbstractItemDelegate
+class game_list_grid_delegate : public QStyledItemDelegate
 {
 public:
 	game_list_grid_delegate(const QSize& imageSize, const qreal& margin_factor, const qreal& margin_ratio, QObject *parent = 0);
 
-	void paint(QPainter * painter, const QStyleOptionViewItem & option, const QModelIndex & index) const;
-	QSize sizeHint(const QStyleOptionViewItem & option, const QModelIndex & index) const;
-	void setItemSize(const QSize& size) { m_size = size; };
+	virtual void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override;
+	void paint(QPainter * painter, const QStyleOptionViewItem & option, const QModelIndex & index) const override;
+	QSize sizeHint(const QStyleOptionViewItem & option, const QModelIndex & index) const override;
+	void setItemSize(const QSize& size);
 	virtual ~game_list_grid_delegate();
 private:
 	QSize m_size;

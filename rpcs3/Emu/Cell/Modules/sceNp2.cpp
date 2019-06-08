@@ -4,7 +4,7 @@
 #include "sceNp.h"
 #include "sceNp2.h"
 
-logs::channel sceNp2("sceNp2");
+LOG_CHANNEL(sceNp2);
 
 s32 sceNp2Init(u32 poolsize, vm::ptr<void> poolptr)
 {
@@ -31,7 +31,7 @@ s32 sceNpMatching2Init(u32 poolsize, s32 priority)
 {
 	sceNp2.todo("sceNpMatching2Init(poolsize=0x%x, priority=%d)", poolsize, priority);
 
-	return SCE_NP_MATCHING2_ERROR_TIMEDOUT;
+	return CELL_OK;
 }
 
 s32 sceNpMatching2Init2(u32 poolsize, s32 priority, vm::ptr<SceNpMatching2UtilityInitParam> param)
@@ -505,6 +505,12 @@ s32 sceNpAuthGetAuthorizationCode()
 	return CELL_OK;
 }
 
+s32 sceNpAuthGetAuthorizationCode2()
+{
+	UNIMPLEMENTED_FUNC(sceNp2);
+	return CELL_OK;
+}
+
 DECLARE(ppu_module_manager::sceNp2)("sceNp2", []()
 {
 	REG_FUNC(sceNp2, sceNpMatching2DestroyContext);
@@ -587,4 +593,5 @@ DECLARE(ppu_module_manager::sceNp2)("sceNp2", []()
 	REG_FUNC(sceNp2, sceNpAuthDeleteOAuthRequest);
 	REG_FUNC(sceNp2, sceNpAuthAbortOAuthRequest);
 	REG_FUNC(sceNp2, sceNpAuthGetAuthorizationCode);
+	REG_FUNC(sceNp2, sceNpAuthGetAuthorizationCode2);
 });

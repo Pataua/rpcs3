@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "Emu/Memory/Memory.h"
+#include "Emu/Memory/vm.h"
 #include "Emu/System.h"
 #include "Emu/IdManager.h"
 #include "Emu/IPC.h"
@@ -8,9 +8,9 @@
 #include "Emu/Cell/PPUThread.h"
 #include "sys_rwlock.h"
 
-namespace vm { using namespace ps3; }
 
-logs::channel sys_rwlock("sys_rwlock");
+
+LOG_CHANNEL(sys_rwlock);
 
 template<> DECLARE(ipc_manager<lv2_rwlock, u64>::g_ipc) {};
 
@@ -91,7 +91,7 @@ error_code sys_rwlock_rlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 			}
 		}
 
-		semaphore_lock lock(rwlock.mutex);
+		std::lock_guard lock(rwlock.mutex);
 
 		const s64 _old = rwlock.owner.fetch_op([&](s64& val)
 		{
@@ -129,13 +129,18 @@ error_code sys_rwlock_rlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 
 	while (!ppu.state.test_and_reset(cpu_flag::signal))
 	{
+		if (ppu.is_stopped())
+		{
+			return 0;
+		}
+
 		if (timeout)
 		{
 			const u64 passed = get_system_time() - ppu.start_time;
 
 			if (passed >= timeout)
 			{
-				semaphore_lock lock(rwlock->mutex);
+				std::lock_guard lock(rwlock->mutex);
 
 				if (!rwlock->unqueue(rwlock->rq, &ppu))
 				{
@@ -164,17 +169,18 @@ error_code sys_rwlock_tryrlock(u32 rw_lock_id)
 
 	const auto rwlock = idm::check<lv2_obj, lv2_rwlock>(rw_lock_id, [](lv2_rwlock& rwlock)
 	{
-		const s64 val = rwlock.owner;
-
-		if (val <= 0 && !(val & 1))
+		auto [_, ok] = rwlock.owner.fetch_op([](s64& val)
 		{
-			if (rwlock.owner.compare_and_swap_test(val, val - 2))
+			if (val <= 0 && !(val & 1))
 			{
+				val -= 2;
 				return true;
 			}
-		}
 
-		return false;
+			return false;
+		});
+
+		return ok;
 	});
 
 	if (!rwlock)
@@ -220,7 +226,7 @@ error_code sys_rwlock_runlock(ppu_thread& ppu, u32 rw_lock_id)
 	}
 	else
 	{
-		semaphore_lock lock(rwlock->mutex);
+		std::lock_guard lock(rwlock->mutex);
 
 		// Remove one reader
 		const s64 _old = rwlock->owner.fetch_op([](s64& val)
@@ -240,7 +246,7 @@ error_code sys_rwlock_runlock(ppu_thread& ppu, u32 rw_lock_id)
 		{
 			if (const auto cpu = rwlock->schedule<ppu_thread>(rwlock->wq, rwlock->protocol))
 			{
-				rwlock->owner = cpu->id << 1 | !rwlock->wq.empty();
+				rwlock->owner = cpu->id << 1 | !rwlock->wq.empty() | !rwlock->rq.empty();
 
 				rwlock->awake(*cpu);
 			}
@@ -276,7 +282,7 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 			return val;
 		}
 
-		semaphore_lock lock(rwlock.mutex);
+		std::lock_guard lock(rwlock.mutex);
 
 		const s64 _old = rwlock.owner.fetch_op([&](s64& val)
 		{
@@ -318,13 +324,18 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 
 	while (!ppu.state.test_and_reset(cpu_flag::signal))
 	{
+		if (ppu.is_stopped())
+		{
+			return 0;
+		}
+
 		if (timeout)
 		{
 			const u64 passed = get_system_time() - ppu.start_time;
 
 			if (passed >= timeout)
 			{
-				semaphore_lock lock(rwlock->mutex);
+				std::lock_guard lock(rwlock->mutex);
 
 				if (!rwlock->unqueue(rwlock->wq, &ppu))
 				{
@@ -332,10 +343,12 @@ error_code sys_rwlock_wlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout)
 					continue;
 				}
 
-				// If the last waiter quit the writer sleep queue, readers must acquire the lock
-				if (!rwlock->rq.empty() && rwlock->wq.empty())
+				// If the last waiter quit the writer sleep queue, wake blocked readers
+				if (!rwlock->rq.empty() && rwlock->wq.empty() && rwlock->owner < 0)
 				{
-					rwlock->owner = (s64{-2} * rwlock->rq.size()) | 1;
+					verify(HERE), rwlock->owner & 1;
+
+					rwlock->owner -= s64{2} * rwlock->rq.size();
 
 					while (auto cpu = rwlock->schedule<ppu_thread>(rwlock->rq, SYS_SYNC_PRIORITY))
 					{
@@ -383,7 +396,7 @@ error_code sys_rwlock_trywlock(ppu_thread& ppu, u32 rw_lock_id)
 		{
 			return CELL_EDEADLK;
 		}
-		
+
 		return not_an_error(CELL_EBUSY);
 	}
 
@@ -414,7 +427,7 @@ error_code sys_rwlock_wunlock(ppu_thread& ppu, u32 rw_lock_id)
 
 	if (rwlock.ret & 1)
 	{
-		semaphore_lock lock(rwlock->mutex);
+		std::lock_guard lock(rwlock->mutex);
 
 		if (auto cpu = rwlock->schedule<ppu_thread>(rwlock->wq, rwlock->protocol))
 		{

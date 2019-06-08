@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "stdafx.h"
 
@@ -7,17 +7,21 @@
 #include "basic_mouse_handler.h"
 
 #include "Utilities/Config.h"
+#include "Emu/VFS.h"
 #include "Emu/RSX/GSRender.h"
 #include "Emu/Io/KeyboardHandler.h"
 #include "Emu/Io/PadHandler.h"
 #include "Emu/Io/MouseHandler.h"
-#include "Emu/Audio/AudioThread.h"
+#include "Emu/Audio/AudioBackend.h"
 
 #include "rpcs3qt/msg_dialog_frame.h"
+#include "rpcs3qt/osk_dialog_frame.h"
 #include "rpcs3qt/main_window.h"
 #include "rpcs3qt/gui_settings.h"
+#include "rpcs3qt/emu_settings.h"
 
 #include <QApplication>
+#include <QFontDatabase>
 
 /** RPCS3 Application Class
  * The point of this class is to do application initialization and to hold onto the main window. The main thing I intend this class to do, for now, is to initialize callbacks and the main_window.
@@ -31,6 +35,9 @@ public:
 	/** Call this method before calling app.exec
 	*/
 	void Init();
+
+	/** Emu.Init() wrapper for user manager */
+	static bool InitializeEmulator(const std::string& user, bool force_init);
 Q_SIGNALS:
 	void OnEmulatorRun();
 	void OnEmulatorPause();
@@ -45,8 +52,9 @@ private:
 	void InitializeCallbacks();
 	void InitializeConnects();
 
-	main_window* RPCS3MainWin;
+	main_window* RPCS3MainWin = nullptr;
 
 	std::shared_ptr<gui_settings> guiSettings;
+	std::shared_ptr<emu_settings> emuSettings;
 	QWindow* gameWindow = nullptr; //! (Currently) only needed so that pad handlers have a valid target for event filtering.
 };

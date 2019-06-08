@@ -1,7 +1,7 @@
 #pragma once
 
 #include "D3D12Utils.h"
-#include "Emu/Memory/Memory.h"
+#include "Emu/Memory/vm.h"
 #include "Emu/System.h"
 #include "Emu/RSX/GSRender.h"
 
@@ -61,8 +61,6 @@ private:
 	data_cache m_texture_cache;
 	bool invalidate_address(u32 addr);
 
-	RSXVertexProgram m_vertex_program;
-	RSXFragmentProgram m_fragment_program;
 	PipelineStateObjectCache m_pso_cache;
 	std::tuple<ComPtr<ID3D12PipelineState>, size_t, size_t> m_current_pso;
 
@@ -123,6 +121,7 @@ private:
 	ComPtr<ID3D12DescriptorHeap> m_current_sampler_descriptors;
 
 public:
+	u64 get_cycles() override final;
 	D3D12GSRender();
 	virtual ~D3D12GSRender();
 
@@ -175,13 +174,15 @@ private:
 protected:
 	virtual void on_init_thread() override;
 	virtual void on_exit() override;
+	virtual void do_local_task(rsx::FIFO_state state) override;
 	virtual bool do_method(u32 cmd, u32 arg) override;
 	virtual void end() override;
-	virtual void flip(int buffer) override;
+	virtual void flip(int buffer, bool emu_flip = false) override;
 
 	virtual bool on_access_violation(u32 address, bool is_writing) override;
 
 	virtual std::array<std::vector<gsl::byte>, 4> copy_render_targets_to_memory() override;
 	virtual std::array<std::vector<gsl::byte>, 2> copy_depth_stencil_buffer_to_memory() override;
 	virtual std::pair<std::string, std::string> get_programs() const override;
+	virtual void notify_tile_unbound(u32 tile) override;
 };

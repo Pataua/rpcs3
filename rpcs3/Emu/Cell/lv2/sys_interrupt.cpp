@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "Emu/Memory/Memory.h"
+#include "Emu/Memory/vm.h"
 #include "Emu/System.h"
 #include "Emu/IdManager.h"
 
@@ -8,20 +8,19 @@
 #include "Emu/Cell/PPUOpcodes.h"
 #include "sys_interrupt.h"
 
-namespace vm { using namespace ps3; }
-
-logs::channel sys_interrupt("sys_interrupt");
+LOG_CHANNEL(sys_interrupt);
 
 void lv2_int_serv::exec()
 {
 	thread->cmd_list
 	({
+		{ ppu_cmd::reset_stack, 0 },
 		{ ppu_cmd::set_args, 2 }, arg1, arg2,
 		{ ppu_cmd::lle_call, 2 },
 		{ ppu_cmd::sleep, 0 }
 	});
 
-	thread->notify();
+	thread_ctrl::notify(*thread);
 }
 
 void lv2_int_serv::join()
@@ -34,8 +33,8 @@ void lv2_int_serv::join()
 		{ ppu_cmd::opcode, ppu_instructions::SC(0) },
 	});
 
-	thread->notify();
-	thread->join();
+	thread_ctrl::notify(*thread);
+	(*thread)();
 }
 
 error_code sys_interrupt_tag_destroy(u32 intrtag)
@@ -85,7 +84,7 @@ error_code _sys_interrupt_thread_establish(vm::ptr<u32> ih, u32 intrtag, u32 int
 		}
 
 		// Get interrupt thread
-		const auto it = idm::get_unlocked<ppu_thread>(intrthread);
+		const auto it = idm::get_unlocked<named_thread<ppu_thread>>(intrthread);
 
 		if (!it)
 		{
@@ -94,7 +93,7 @@ error_code _sys_interrupt_thread_establish(vm::ptr<u32> ih, u32 intrtag, u32 int
 		}
 
 		// If interrupt thread is running, it's already established on another interrupt tag
-		if (!test(it->state & cpu_flag::stop))
+		if (!(it->state & cpu_flag::stop))
 		{
 			error = CELL_EAGAIN;
 			return result;
@@ -109,7 +108,8 @@ error_code _sys_interrupt_thread_establish(vm::ptr<u32> ih, u32 intrtag, u32 int
 
 		result = std::make_shared<lv2_int_serv>(it, arg1, arg2);
 		tag->handler = result;
-		it->run();
+		it->state -= cpu_flag::stop;
+		thread_ctrl::notify(*it);
 		return result;
 	});
 
@@ -130,6 +130,12 @@ error_code _sys_interrupt_thread_disestablish(ppu_thread& ppu, u32 ih, vm::ptr<u
 
 	if (!handler)
 	{
+		if (const auto thread = idm::withdraw<named_thread<ppu_thread>>(ih))
+		{
+			*r13 = thread->gpr[13];
+			return CELL_OK;
+		}
+
 		return CELL_ESRCH;
 	}
 

@@ -3,9 +3,9 @@
 
 #include "cellSpudll.h"
 
-namespace vm { using namespace ps3; }
 
-logs::channel cellSpudll("cellSpudll");
+
+LOG_CHANNEL(cellSpudll);
 
 template<>
 void fmt_class_string<CellSpudllError>::format(std::string& out, u64 arg)
@@ -66,5 +66,5 @@ error_code cellSpudllHandleConfigSetDefaultValues(vm::ptr<CellSpudllHandleConfig
 DECLARE(ppu_module_manager::cellSpudll)("cellSpudll", []()
 {
 	REG_FUNC(cellSpudll, cellSpudllGetImageSize);
-	REG_FUNC(cellSpudll, cellSpudllHandleConfigSetDefaultValues).flags = MFF_PERFECT;
+	REG_FUNC(cellSpudll, cellSpudllHandleConfigSetDefaultValues).flag(MFF_PERFECT);
 });

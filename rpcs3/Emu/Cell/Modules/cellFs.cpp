@@ -11,9 +11,9 @@
 
 #include <mutex>
 
-namespace vm { using namespace ps3; }
 
-logs::channel cellFs("cellFs");
+
+LOG_CHANNEL(cellFs);
 
 error_code cellFsGetPath(u32 fd, vm::ptr<char> out_path)
 {
@@ -206,18 +206,18 @@ error_code cellFsLseek(u32 fd, s64 offset, u32 whence, vm::ptr<u64> pos)
 	return sys_fs_lseek(fd, offset, whence, pos);
 }
 
-error_code cellFsFdatasync(u32 fd)
+error_code cellFsFdatasync(ppu_thread& ppu, u32 fd)
 {
 	cellFs.trace("cellFsFdatasync(fd=%d)", fd);
 
-	return sys_fs_fdatasync(fd);
+	return sys_fs_fdatasync(ppu, fd);
 }
 
-error_code cellFsFsync(u32 fd)
+error_code cellFsFsync(ppu_thread& ppu, u32 fd)
 {
 	cellFs.trace("cellFsFsync(fd=%d)", fd);
 
-	return sys_fs_fsync(fd);
+	return sys_fs_fsync(ppu, fd);
 }
 
 error_code cellFsFGetBlockSize(u32 fd, vm::ptr<u64> sector_size, vm::ptr<u64> block_size)
@@ -417,7 +417,7 @@ error_code cellFsGetDirectoryEntries(u32 fd, vm::ptr<CellFsDirectoryEntry> entri
 		return CellError(+op->arg._code);
 	}
 
-	return not_an_error(rc);	
+	return not_an_error(rc);
 }
 
 error_code cellFsReadWithOffset(u32 fd, u64 offset, vm::ptr<void> buf, u64 buffer_size, vm::ptr<u64> nread)
@@ -433,7 +433,7 @@ error_code cellFsReadWithOffset(u32 fd, u64 offset, vm::ptr<void> buf, u64 buffe
 	vm::var<lv2_file_op_rw> arg;
 
 	arg->_vtable = vm::cast(0xfa8a0000); // Intentionally wrong (provide correct vtable if necessary)
-	
+
 	arg->op = 0x8000000a;
 	arg->fd = fd;
 	arg->buf = buf;
@@ -447,7 +447,7 @@ error_code cellFsReadWithOffset(u32 fd, u64 offset, vm::ptr<void> buf, u64 buffe
 	{
 		*nread = rc && rc != CELL_EFSSPECIFIC ? 0 : arg->out_size.value();
 	}
-	
+
 	if (!rc && arg->out_code)
 	{
 		return CellError(+arg->out_code);
@@ -475,7 +475,7 @@ error_code cellFsWriteWithOffset(u32 fd, u64 offset, vm::cptr<void> buf, u64 dat
 	vm::var<lv2_file_op_rw> arg;
 
 	arg->_vtable = vm::cast(0xfa8b0000); // Intentionally wrong (provide correct vtable if necessary)
-	
+
 	arg->op = 0x8000000b;
 	arg->fd = fd;
 	arg->buf = vm::const_ptr_cast<void>(buf);
@@ -545,6 +545,12 @@ error_code cellFsSdataOpenByFd(u32 mself_fd, s32 flags, vm::ptr<u32> sdata_fd, u
 }
 
 error_code cellFsSdataOpenWithVersion()
+{
+	UNIMPLEMENTED_FUNC(cellFs);
+	return CELL_OK;
+}
+
+error_code cellFsSetAttribute()
 {
 	UNIMPLEMENTED_FUNC(cellFs);
 	return CELL_OK;
@@ -623,7 +629,7 @@ error_code cellFsAllocateFileAreaWithoutZeroFill(vm::cptr<char> path, u64 size)
 	{
 		return CellError(rc);
 	}
-	
+
 	return CELL_OK;
 }
 
@@ -670,7 +676,7 @@ s32 cellFsStReadInit(u32 fd, vm::cptr<CellFsRingBuffer> ringbuf)
 	{
 		return CELL_EBADF;
 	}
-	
+
 	if (file->flags & CELL_FS_O_WRONLY)
 	{
 		return CELL_EPERM;
@@ -780,7 +786,7 @@ s32 cellFsStReadStop(u32 fd)
 s32 cellFsStRead(u32 fd, vm::ptr<u8> buf, u64 size, vm::ptr<u64> rsize)
 {
 	cellFs.todo("cellFsStRead(fd=%d, buf=*0x%x, size=0x%llx, rsize=*0x%x)", fd, buf, size, rsize);
-	
+
 	const auto file = idm::get<lv2_fs_object, lv2_file>(fd);
 
 	if (!file)
@@ -812,7 +818,7 @@ s32 cellFsStReadGetCurrentAddr(u32 fd, vm::ptr<u32> addr, vm::ptr<u64> size)
 s32 cellFsStReadPutCurrentAddr(u32 fd, vm::ptr<u8> addr, u64 size)
 {
 	cellFs.todo("cellFsStReadPutCurrentAddr(fd=%d, addr=*0x%x, size=0x%llx)", fd, addr, size);
-	
+
 	const auto file = idm::get<lv2_fs_object, lv2_file>(fd);
 
 	if (!file)
@@ -828,7 +834,7 @@ s32 cellFsStReadPutCurrentAddr(u32 fd, vm::ptr<u8> addr, u64 size)
 s32 cellFsStReadWait(u32 fd, u64 size)
 {
 	cellFs.todo("cellFsStReadWait(fd=%d, size=0x%llx)", fd, size);
-	
+
 	const auto file = idm::get<lv2_fs_object, lv2_file>(fd);
 
 	if (!file)
@@ -837,7 +843,7 @@ s32 cellFsStReadWait(u32 fd, u64 size)
 	}
 
 	// TODO
-	
+
 	return CELL_OK;
 }
 
@@ -853,7 +859,7 @@ s32 cellFsStReadWaitCallback(u32 fd, u64 size, vm::ptr<void(s32 xfd, u64 xsize)>
 	}
 
 	// TODO
-	
+
 	return CELL_OK;
 }
 
@@ -869,7 +875,7 @@ struct fs_aio_thread : ppu_thread
 {
 	using ppu_thread::ppu_thread;
 
-	virtual void cpu_task() override
+	void non_task()
 	{
 		while (cmd64 cmd = cmd_wait())
 		{
@@ -891,7 +897,7 @@ struct fs_aio_thread : ppu_thread
 			}
 			else
 			{
-				std::lock_guard<std::mutex> lock(file->mp->mutex);
+				std::lock_guard lock(file->mp->mutex);
 
 				const auto old_pos = file->file.pos(); file->file.seek(aio->offset);
 
@@ -920,11 +926,7 @@ s32 cellFsAioInit(vm::cptr<char> mount_point)
 	// TODO: create AIO thread (if not exists) for specified mount point
 	const auto m = fxm::make<fs_aio_manager>();
 
-	if (m)
-	{
-		m->thread = idm::make_ptr<ppu_thread, fs_aio_thread>("FS AIO Thread", 500);
-		m->thread->run();
-	}
+	fmt::throw_exception("cellFsAio disabled, use LLE.");
 
 	return CELL_OK;
 }
@@ -961,8 +963,6 @@ s32 cellFsAioRead(vm::ptr<CellFsAio> aio, vm::ptr<s32> id, fs_aio_cb_t func)
 		{ aio, func },
 	});
 
-	m->thread->notify();
-
 	return CELL_OK;
 }
 
@@ -986,8 +986,6 @@ s32 cellFsAioWrite(vm::ptr<CellFsAio> aio, vm::ptr<s32> id, fs_aio_cb_t func)
 		{ 2, xid },
 		{ aio, func },
 	});
-
-	m->thread->notify();
 
 	return CELL_OK;
 }
@@ -1035,22 +1033,22 @@ DECLARE(ppu_module_manager::cellFs)("sys_fs", []()
 	REG_FUNC(sys_fs, cellFsChangeFileSizeWithoutAllocation);
 	REG_FUNC(sys_fs, cellFsChmod);
 	REG_FUNC(sys_fs, cellFsChown);
-	REG_FUNC(sys_fs, cellFsClose).flags = MFF_PERFECT;
-	REG_FUNC(sys_fs, cellFsClosedir).flags = MFF_PERFECT;
+	REG_FUNC(sys_fs, cellFsClose).flag(MFF_PERFECT);
+	REG_FUNC(sys_fs, cellFsClosedir).flag(MFF_PERFECT);
 	REG_FUNC(sys_fs, cellFsFcntl);
 	REG_FUNC(sys_fs, cellFsFdatasync);
-	REG_FUNC(sys_fs, cellFsFGetBlockSize).flags = MFF_PERFECT;
+	REG_FUNC(sys_fs, cellFsFGetBlockSize).flag(MFF_PERFECT);
 	REG_FUNC(sys_fs, cellFsFGetBlockSize2);
 	REG_FUNC(sys_fs, cellFsFstat).flags = MFF_PERFECT;
 	REG_FUNC(sys_fs, cellFsFsync);
-	REG_FUNC(sys_fs, cellFsFtruncate).flags = MFF_PERFECT;
+	REG_FUNC(sys_fs, cellFsFtruncate).flag(MFF_PERFECT);
 	REG_FUNC(sys_fs, cellFsGetBlockSize);
 	REG_FUNC(sys_fs, cellFsGetBlockSize2);
 	REG_FUNC(sys_fs, cellFsGetDirectoryEntries);
 	REG_FUNC(sys_fs, cellFsGetFreeSize);
 	REG_FUNC(sys_fs, cellFsGetPath);
 	REG_FUNC(sys_fs, cellFsLink);
-	REG_FUNC(sys_fs, cellFsLseek).flags = MFF_PERFECT;
+	REG_FUNC(sys_fs, cellFsLseek).flag(MFF_PERFECT);
 	REG_FUNC(sys_fs, cellFsLsnGetCDA);
 	REG_FUNC(sys_fs, cellFsLsnGetCDASize);
 	REG_FUNC(sys_fs, cellFsLsnLock);
@@ -1063,8 +1061,8 @@ DECLARE(ppu_module_manager::cellFs)("sys_fs", []()
 	REG_FUNC(sys_fs, cellFsOpen);
 	REG_FUNC(sys_fs, cellFsOpen2);
 	REG_FUNC(sys_fs, cellFsOpendir);
-	REG_FUNC(sys_fs, cellFsRead).flags = MFF_PERFECT;
-	REG_FUNC(sys_fs, cellFsReaddir).flags = MFF_PERFECT;
+	REG_FUNC(sys_fs, cellFsRead).flag(MFF_PERFECT);
+	REG_FUNC(sys_fs, cellFsReaddir).flag(MFF_PERFECT);
 	REG_FUNC(sys_fs, cellFsReadWithOffset);
 	REG_FUNC(sys_fs, cellFsRegisterConversionCallback);
 	REG_FUNC(sys_fs, cellFsRename);
@@ -1072,6 +1070,7 @@ DECLARE(ppu_module_manager::cellFs)("sys_fs", []()
 	REG_FUNC(sys_fs, cellFsSdataOpen);
 	REG_FUNC(sys_fs, cellFsSdataOpenByFd);
 	REG_FUNC(sys_fs, cellFsSdataOpenWithVersion);
+	REG_FUNC(sys_fs, cellFsSetAttribute);
 	REG_FUNC(sys_fs, cellFsSetDefaultContainer);
 	REG_FUNC(sys_fs, cellFsSetDiscReadRetrySetting);
 	REG_FUNC(sys_fs, cellFsSetIoBuffer);
@@ -1095,6 +1094,6 @@ DECLARE(ppu_module_manager::cellFs)("sys_fs", []()
 	REG_FUNC(sys_fs, cellFsUnlink);
 	REG_FUNC(sys_fs, cellFsUnregisterL10nCallbacks);
 	REG_FUNC(sys_fs, cellFsUtime);
-	REG_FUNC(sys_fs, cellFsWrite).flags = MFF_PERFECT;
+	REG_FUNC(sys_fs, cellFsWrite).flag(MFF_PERFECT);
 	REG_FUNC(sys_fs, cellFsWriteWithOffset);
 });

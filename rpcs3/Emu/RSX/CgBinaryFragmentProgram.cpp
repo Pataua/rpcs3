@@ -34,8 +34,8 @@ void CgBinaryDisasm::AddCodeAsm(const std::string& code)
 	case RSX_FP_OPCODE_LOOP:
 	case RSX_FP_OPCODE_NOP:
 	case RSX_FP_OPCODE_REP:
-	case RSX_FP_OPCODE_RET: 
-		m_dst_reg_name = "";
+	case RSX_FP_OPCODE_RET:
+		m_dst_reg_name.clear();
 		op_name = rsx_fp_op_names[m_opcode] + std::string(dst.fp16 ? "H" : "R");
 		break;
 
@@ -77,7 +77,7 @@ std::string CgBinaryDisasm::AddConstDisAsm()
 	const u32 z = GetData(data[2]);
 	const u32 w = GetData(data[3]);
 
-	return fmt::format("{0x%08x(%g), 0x%08x(%g), 0x%08x(%g), 0x%08x(%g)}", x, (float&)x, y, (float&)y, z, (float&)z, w, (float&)w);
+	return fmt::format("{0x%08x(%g), 0x%08x(%g), 0x%08x(%g), 0x%08x(%g)}", x, std::bit_cast<f32>(x), y, std::bit_cast<f32>(y), z, std::bit_cast<f32>(z), w, std::bit_cast<f32>(w));
 }
 
 std::string CgBinaryDisasm::AddTexDisAsm()
@@ -178,7 +178,7 @@ template<typename T> std::string CgBinaryDisasm::GetSrcDisAsm(T src)
 		{
 		case 0x00: ret += reg_table[0]; break;
 		default:
-			if (dst.src_attr_reg_num < sizeof(reg_table) / sizeof(reg_table[0]))
+			if (dst.src_attr_reg_num < std::size(reg_table))
 			{
 				ret += fmt::format("%s[%s]", perspective_correction.c_str(), input_attr_reg.c_str());
 			}
@@ -469,7 +469,7 @@ void CgBinaryDisasm::TaskFP()
 		if (dst.end)
 		{
 			m_arb_shader.pop_back();
-			m_arb_shader += " # last inctruction\nEND\n";
+			m_arb_shader += " # last instruction\nEND\n";
 			break;
 		}
 

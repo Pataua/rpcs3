@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "Emu/Memory/Memory.h"
+#include "Emu/Memory/vm.h"
 #include "Emu/System.h"
 
 #include "Emu/IdManager.h"
@@ -15,6 +15,7 @@
 #include "Emu/Cell/lv2/sys_event_flag.h"
 #include "Emu/Cell/lv2/sys_rwlock.h"
 #include "Emu/Cell/lv2/sys_prx.h"
+#include "Emu/Cell/lv2/sys_overlay.h"
 #include "Emu/Cell/lv2/sys_memory.h"
 #include "Emu/Cell/lv2/sys_mmapper.h"
 #include "Emu/Cell/lv2/sys_spu.h"
@@ -28,11 +29,9 @@
 kernel_explorer::kernel_explorer(QWidget* parent) : QDialog(parent)
 {
 	setWindowTitle(tr("Kernel Explorer"));
+	setObjectName("kernel_explorer");
 	setAttribute(Qt::WA_DeleteOnClose);
 	setMinimumSize(QSize(700, 450));
-	QPalette pal;
-	pal.setColor(QPalette::Background, QColor(240, 240, 240));
-	setPalette(pal); //This fix the ugly background color under Windows
 
 	QVBoxLayout* vbox_panel = new QVBoxLayout();
 	QHBoxLayout* hbox_buttons = new QHBoxLayout();
@@ -56,24 +55,23 @@ kernel_explorer::kernel_explorer(QWidget* parent) : QDialog(parent)
 	// Events
 	connect(button_refresh, &QAbstractButton::clicked, this, &kernel_explorer::Update);
 
-	// Fill the wxTreeCtrl
 	Update();
-};
+}
 
-inline QString qstr(const std::string& _in) { return QString::fromUtf8(_in.data(), static_cast<int>(_in.size())); }
+constexpr auto qstr = QString::fromStdString;
 
 void kernel_explorer::Update()
 {
 	m_tree->clear();
 
-	const auto vm_block = vm::get(vm::user_space);
+	const auto dct = fxm::get<lv2_memory_container>();
 
-	if (!vm_block)
+	if (!dct)
 	{
 		return;
 	}
 
-	const u32 total_memory_usage = vm_block->used();
+	const u32 total_memory_usage = dct->used;
 
 	QTreeWidgetItem* root = new QTreeWidgetItem();
 	root->setText(0, qstr(fmt::format("Process, ID = 0x00000001, Total Memory Usage = 0x%x (%0.2f MB)", total_memory_usage, (float)total_memory_usage / (1024 * 1024))));
@@ -128,8 +126,9 @@ void kernel_explorer::Update()
 	lv2_types[SYS_EVENT_PORT_OBJECT] =					l_addTreeChild(root, "Event Ports");
 	lv2_types[SYS_TRACE_OBJECT] =								l_addTreeChild(root, "Traces");
 	lv2_types[SYS_SPUIMAGE_OBJECT] =						l_addTreeChild(root, "SPU Images");
-	lv2_types[SYS_PRX_OBJECT] =									l_addTreeChild(root, "Modules");
+	lv2_types[SYS_PRX_OBJECT] =									l_addTreeChild(root, "PRX Modules");
 	lv2_types[SYS_SPUPORT_OBJECT] =							l_addTreeChild(root, "SPU Ports");
+	lv2_types[SYS_OVERLAY_OBJECT] =						 l_addTreeChild(root, "Overlay Modules");
 	lv2_types[SYS_LWMUTEX_OBJECT] =							l_addTreeChild(root, "Light Weight Mutexes");
 	lv2_types[SYS_TIMER_OBJECT] =								l_addTreeChild(root, "Timers");
 	lv2_types[SYS_SEMAPHORE_OBJECT] =						l_addTreeChild(root, "Semaphores");
@@ -215,6 +214,12 @@ void kernel_explorer::Update()
 			l_addTreeChild(node, qstr(fmt::format("SPU Port: ID = 0x%08x", id)));
 			break;
 		}
+		case SYS_OVERLAY_OBJECT:
+		{
+			auto& ovl = static_cast<lv2_overlay&>(obj);
+			l_addTreeChild(node, qstr(fmt::format("OVL: ID = 0x%08x '%s'", id, ovl.name)));
+			break;
+		}
 		case SYS_LWMUTEX_OBJECT:
 		{
 			auto& lwm = static_cast<lv2_lwmutex&>(obj);
@@ -264,18 +269,18 @@ void kernel_explorer::Update()
 
 	lv2_types.emplace_back(l_addTreeChild(root, "PPU Threads"));
 
-	idm::select<ppu_thread>([&](u32 id, ppu_thread& ppu)
+	idm::select<named_thread<ppu_thread>>([&](u32 id, ppu_thread& ppu)
 	{
 		lv2_types.back().count++;
-		l_addTreeChild(lv2_types.back().node, qstr(fmt::format("PPU Thread: ID = 0x%08x '%s'", id, ppu.get_name())));
+		l_addTreeChild(lv2_types.back().node, qstr(fmt::format("PPU Thread: ID = 0x%08x '%s'", id, ppu.ppu_name.get())));
 	});
 
 	lv2_types.emplace_back(l_addTreeChild(root, "SPU Threads"));
 
-	idm::select<SPUThread>([&](u32 id, SPUThread& spu)
+	idm::select<named_thread<spu_thread>>([&](u32 id, spu_thread& spu)
 	{
 		lv2_types.back().count++;
-		l_addTreeChild(lv2_types.back().node, qstr(fmt::format("SPU Thread: ID = 0x%08x '%s'", id, spu.get_name())));
+		l_addTreeChild(lv2_types.back().node, qstr(fmt::format("SPU Thread: ID = 0x%08x '%s'", id, spu.spu_name.get())));
 	});
 
 	lv2_types.emplace_back(l_addTreeChild(root, "SPU Thread Groups"));

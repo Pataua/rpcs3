@@ -1,9 +1,15 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 
 #include "PUP.h"
 
 pup_object::pup_object(const fs::file& file): m_file(file)
 {
+	if (!file)
+	{
+		isValid = false;
+		return;
+	}
+
 	PUPHeader m_header;
 	m_file.read(m_header);
 	if (m_header.magic != "SCEUF\0\0\0"_u64)
@@ -33,4 +39,4 @@ fs::file pup_object::get_file(u64 entry_id)
 		}
 	}
 	return fs::file();
-};
+}

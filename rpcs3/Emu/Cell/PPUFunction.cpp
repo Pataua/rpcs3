@@ -7,7 +7,6 @@ extern std::string ppu_get_syscall_name(u64 code)
 	{
 	case 1: return "sys_process_getpid";
 	case 2: return "sys_process_wait_for_child";
-	case 3: return "sys_process_exit";
 	case 4: return "sys_process_get_status";
 	case 5: return "sys_process_detach_child";
 	case 12: return "sys_process_get_number_of_object";
@@ -16,10 +15,10 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 18: return "sys_process_getppid";
 	case 19: return "sys_process_kill";
 	case 21: return "_sys_process_spawn";
-	case 22: return "sys_process_exit";
+	case 22: return "_sys_process_exit";
 	case 23: return "sys_process_wait_for_child2";
 	case 25: return "sys_process_get_sdk_version";
-	case 26: return "_sys_process_exit";
+	case 26: return "_sys_process_exit2";
 	case 28: return "_sys_process_get_number_of_object";
 	case 29: return "sys_process_get_id";
 	case 30: return "_sys_process_get_paramsfo";
@@ -94,7 +93,9 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 114: return "sys_semaphore_get_value";
 	case 115: return "_sys_lwcond_signal";
 	case 116: return "_sys_lwcond_signal_all";
+	case 117: return "_sys_lwmutex_unlock2";
 	case 118: return "sys_event_flag_clear";
+	case 119: return "sys_time_get_rtc";
 	case 120: return "sys_rwlock_create";
 	case 121: return "sys_rwlock_destroy";
 	case 122: return "sys_rwlock_rlock";
@@ -133,7 +134,7 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 156: return "sys_spu_image_open";
 	case 157: return "_sys_spu_image_import";
 	case 158: return "_sys_spu_image_close";
-	case 159: return "_sys_raw_spu_image_load";
+	case 159: return "_sys_spu_image_get_segments";
 	case 160: return "sys_raw_spu_create";
 	case 161: return "sys_raw_spu_destroy";
 	case 163: return "sys_raw_spu_read_puint_mb";
@@ -208,6 +209,7 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 325: return "sys_memory_container_destroy";
 	case 326: return "sys_mmapper_allocate_fixed_address";
 	case 327: return "sys_mmapper_enable_page_fault_notification";
+	case 328: return "sys_mmapper_allocate_shared_memory_ext";
 	case 329: return "sys_mmapper_free_shared_memory";
 	case 330: return "sys_mmapper_allocate_address";
 	case 331: return "sys_mmapper_free_address";
@@ -245,11 +247,12 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 379: return "sys_sm_shutdown";
 	case 380: return "sys_sm_get_params";
 	case 381: return "sys_sm_get_inter_lpar_parameter";
+	case 382: return "sys_sm_initialize";
 	case 383: return "sys_game_get_temperature";
 	case 384: return "sys_sm_get_tzpb";
 	case 385: return "sys_sm_request_led";
 	case 386: return "sys_sm_control_led";
-	case 387: return "sys_sm_get_platform_info";
+	case 387: return "sys_sm_get_system_info";
 	case 388: return "sys_sm_ring_buzzer";
 	case 389: return "sys_sm_set_fan_policy";
 	case 390: return "sys_sm_request_error_log";
@@ -284,6 +287,8 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 465: return "_sys_prx_load_module_list";
 	case 466: return "_sys_prx_load_module_list_on_memcontainer";
 	case 467: return "sys_prx_get_ppu_guid";
+	case 470: return "sys_npdrm_check_ekc";
+	case 471: return "sys_npdrm_regist_ekc";
 	case 480: return "_sys_prx_load_module";
 	case 481: return "_sys_prx_start_module";
 	case 482: return "_sys_prx_stop_module";
@@ -295,6 +300,7 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 488: return "_sys_prx_link_library";
 	case 489: return "_sys_prx_unlink_library";
 	case 490: return "_sys_prx_query_library";
+	case 492: return "sys_prx_dbg_get_module_list";
 	case 493: return "sys_prx_dbg_get_module_info";
 	case 494: return "_sys_prx_get_module_list";
 	case 495: return "_sys_prx_get_module_info";
@@ -312,6 +318,8 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 507: return "sys_hid_manager_remove_hot_key_observer";
 	case 508: return "sys_hid_manager_grab_focus";
 	case 509: return "sys_hid_manager_release_focus";
+	case 510: return "sys_hid_manager_check_focus";
+	case 511: return "sys_hid_manager_set_master_process";
 	case 516: return "sys_config_open";
 	case 517: return "sys_config_close";
 	case 518: return "sys_config_get_service_event";
@@ -320,6 +328,8 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 521: return "sys_config_register_service";
 	case 522: return "sys_config_unregister_service";
 	case 523: return "sys_config_io_event";
+	case 524: return "sys_config_register_io_error_listener";
+	case 525: return "sys_config_unregister_io_error_listener";
 	case 530: return "sys_usbd_initialize";
 	case 531: return "sys_usbd_finalize";
 	case 532: return "sys_usbd_get_device_list";
@@ -339,16 +349,32 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 546: return "sys_usbd_get_isochronous_transfer_status";
 	case 547: return "sys_usbd_get_device_location";
 	case 548: return "sys_usbd_send_event";
+	case 549: return "sys_usbd_event_port_send";
 	case 550: return "sys_usbd_allocate_memory";
 	case 551: return "sys_usbd_free_memory";
 	case 556: return "sys_usbd_get_device_speed";
 	case 559: return "sys_usbd_register_extra_ldd";
+	case 570: return "sys_pad_ldd_register_controller";
 	case 571: return "sys_pad_ldd_unregister_controller";
 	case 572: return "sys_pad_ldd_data_insert";
 	case 573: return "sys_pad_dbg_ldd_set_data_insert_mode";
 	case 574: return "sys_pad_ldd_register_controller";
 	case 575: return "sys_pad_ldd_get_port_no";
-	case 577: return "sys_pad_manager_...";
+	case 583: return "sys_bt_read_firmware_version";
+	case 584: return "sys_bt_complete_wake_on_host";
+	case 585: return "sys_bt_disable_bluetooth";
+	case 586: return "sys_bt_enable_bluetooth";
+	case 587: return "sys_bt_bccmd";
+	case 588: return "sys_bt_read_hq";
+	case 589: return "sys_bt_hid_get_remote_status";
+	case 590: return "sys_bt_register_controller";
+	case 591: return "sys_bt_clear_registered_contoller";
+	case 592: return "sys_bt_connect_accept_controller";
+	case 593: return "sys_bt_get_local_bdaddress";
+	case 594: return "sys_bt_hid_get_data";
+	case 595: return "sys_bt_hid_set_report";
+	case 596: return "sys_bt_sched_log";
+	case 597: return "sys_bt_cancel_connect_accept_controller";
 	case 600: return "sys_storage_open";
 	case 601: return "sys_storage_close";
 	case 602: return "sys_storage_read";
@@ -381,6 +407,14 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 633: return "sys_fsw_connect_event";
 	case 634: return "sys_fsw_disconnect_event";
 	case 635: return "sys_btsetting_if";
+	case 640: return "sys_usbbtaudio_initialize";
+	case 641: return "sys_usbbtaudio_finalize";
+	case 642: return "sys_usbbtaudio_discovery";
+	case 643: return "sys_usbbtaudio_cancel_discovery";
+	case 644: return "sys_usbbtaudio_pairing";
+	case 645: return "sys_usbbtaudio_set_passkey";
+	case 646: return "sys_usbbtaudio_connect";
+	case 647: return "sys_usbbtaudio_disconnect";
 	case 650: return "sys_rsxaudio_initialize";
 	case 651: return "sys_rsxaudio_finalize";
 	case 652: return "sys_rsxaudio_import_shared_memory";
@@ -414,16 +448,16 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 708: return "sys_net_bnet_recvmsg";
 	case 709: return "sys_net_bnet_sendmsg";
 	case 710: return "sys_net_bnet_sendto";
-	case 711: return "sys_net_bnet_setsockop";
+	case 711: return "sys_net_bnet_setsockopt";
 	case 712: return "sys_net_bnet_shutdown";
 	case 713: return "sys_net_bnet_socket";
 	case 714: return "sys_net_bnet_close";
 	case 715: return "sys_net_bnet_poll";
 	case 716: return "sys_net_bnet_select";
-	case 717: return "sys_net_open_dump";
-	case 718: return "sys_net_read_dump";
-	case 719: return "sys_net_close_dump";
-	case 720: return "sys_net_write_dump";
+	case 717: return "_sys_net_open_dump";
+	case 718: return "_sys_net_read_dump";
+	case 719: return "_sys_net_close_dump";
+	case 720: return "_sys_net_write_dump";
 	case 721: return "sys_net_abort";
 	case 722: return "sys_net_infoctl";
 	case 723: return "sys_net_control";
@@ -479,7 +513,15 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 846: return "sys_fs_mapped_free";
 	case 847: return "sys_fs_truncate2";
 	case 860: return "sys_ss_get_cache_of_analog_sunset_flag";
+	case 861: return "sys_ss_protected_file_db";
+	case 862: return "sys_ss_virtual_trm_manager";
+	case 863: return "sys_ss_update_manager";
+	case 864: return "sys_ss_sec_hw_framework";
 	case 865: return "sys_ss_random_number_generator";
+	case 866: return "sys_ss_secure_rtc";
+	case 867: return "sys_ss_appliance_info_manager";
+	case 868: return "sys_ss_individual_info_manager";
+	case 869: return "sys_ss_factory_data_manager";
 	case 870: return "sys_ss_get_console_id";
 	case 871: return "sys_ss_access_control_engine";
 	case 872: return "sys_ss_get_open_psid";
@@ -487,7 +529,6 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 874: return "sys_ss_get_cache_of_flash_ext_flag";
 	case 875: return "sys_ss_get_boot_device";
 	case 876: return "sys_ss_disc_access_control";
-	case 877: return "sys_ss_~utoken_if";
 	case 878: return "sys_ss_ad_sign";
 	case 879: return "sys_ss_media_id";
 	case 880: return "sys_deci3_open";
@@ -529,7 +570,14 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 921: return "sys_dbg_set_process_event_cntl_flag";
 	case 922: return "sys_dbg_get_spu_thread_group_event_cntl_flag";
 	case 923: return "sys_dbg_set_spu_thread_group_event_cntl_flag";
+	case 924: return "sys_dbg_get_module_list";
 	case 925: return "sys_dbg_get_raw_spu_list";
+	case 926: return "sys_dbg_initialize_scratch_executable_area";
+	case 927: return "sys_dbg_terminate_scratch_executable_area";
+	case 928: return "sys_dbg_initialize_scratch_data_area";
+	case 929: return "sys_dbg_terminate_scratch_data_area";
+	case 930: return "sys_dbg_get_user_memory_stat";
+	case 931: return "sys_dbg_get_shared_memory_attribute_list";
 	case 932: return "sys_dbg_get_mutex_list";
 	case 933: return "sys_dbg_get_mutex_information";
 	case 934: return "sys_dbg_get_cond_list";
@@ -555,7 +603,16 @@ extern std::string ppu_get_syscall_name(u64 code)
 	case 954: return "sys_dbg_vm_get_info";
 	case 955: return "sys_dbg_enable_floating_point_enabled_exception";
 	case 956: return "sys_dbg_disable_floating_point_enabled_exception";
-	case 960: return "sys_dbg_perfomance_monitor";
+	case 957: return "sys_dbg_get_process_memory_container_information";
+	case 960: return "sys_control_performance_monitor";
+	case 961: return "sys_performance_monitor_hidden";
+	case 962: return "sys_performance_monitor_bookmark";
+	case 963: return "sys_lv1_pc_trace_create";
+	case 964: return "sys_lv1_pc_trace_start";
+	case 965: return "sys_lv1_pc_trace_stop";
+	case 966: return "sys_lv1_pc_trace_get_status";
+	case 967: return "sys_lv1_pc_trace_destroy";
+	case 968: return "sys_rsx_trace_ioctl";
 	case 970: return "sys_dbg_get_event_flag_list";
 	case 971: return "sys_dbg_get_event_flag_information";
 	case 975: return "sys_dbg_read_spu_thread_context2";
@@ -579,12 +636,11 @@ extern std::string ppu_get_function_name(const std::string& module, u32 fnid)
 {
 	if (module == "") switch (fnid)
 	{
-	// these arent the actual hash, but its close enough 
-	case 0x0D10FD3F: return "module_prologue";
-	case 0x330F7005: return "module_epilogue";
+	case 0x0d10fd3f: return "module_prologue";
+	case 0x330f7005: return "module_epilogue";
 	case 0x3ab9a95e: return "module_exit";
-	case 0xBC9A0086: return "module_start";
-	case 0xAB779874: return "module_stop";
+	case 0xbc9a0086: return "module_start";
+	case 0xab779874: return "module_stop";
 	}
 
 	// Check known FNIDs
@@ -2377,73 +2433,73 @@ extern std::string ppu_get_variable_name(const std::string& module, u32 vnid)
 	if (module == "") switch (vnid)
 	{
 	// these arent the actual hash, but its close enough
-	case 0xD7F43016: return "module_info";
+	case 0xd7f43016: return "module_info";
 	}
 	// Check known FNIDs
 	if (module == "sys_libc") switch (vnid)
 	{
-	case 0x071928B0: return "_LNan";
-	case 0x0A331920: return "_Clocale";
-	case 0x0B2E15ED: return "_malloc_limit";
-	case 0x0FBC732D: return "_Zero";
+	case 0x071928b0: return "_LNan";
+	case 0x0a331920: return "_Clocale";
+	case 0x0b2e15ed: return "_malloc_limit";
+	case 0x0fbc732d: return "_Zero";
 	case 0x17667744: return "_LInf";
-	case 0x210B2F6E: return "_FNan";
-	case 0x2418F6C0: return "__TT800";
-	case 0x2470D3BC: return "_Hugeval";
-	case 0x26A34F81: return "_Flt";
-	case 0x277A84BB: return "_Mutex_attr";
-	case 0x29E76A6D: return "_LXbig";
-	case 0x2CF8B5D1: return "_Wctrans";
-	case 0x32E56B1A: return "_Stdin";
-	case 0x3916A06A: return "_FILE_P_Head";
-	case 0x45EC2DF6: return "_LEps";
-	case 0x529D4301: return "_Denorm";
-	case 0x57DBCF27: return "_Inf";
-	case 0x5FF11EB4: return "_FZero";
-	case 0x620967C9: return "_Mbcurmax";
-	case 0x6524499E: return "_FInf";
-	case 0x67D1406B: return "__ctype_ptr";
-	case 0x6A09DF41: return "_LRteps";
-	case 0x73898DB8: return "environ";
-	case 0x76628EFB: return "_FSnan";
-	case 0x790B0082: return "_Xbig";
-	case 0x7AFF3242: return "_Snan";
-	case 0x7BC88211: return "_Tolotab";
-	case 0x7F456AF2: return "_Rteps";
-	case 0x81ACF7C1: return "_LZero";
-	case 0x8F87ED0C: return "_Times";
-	case 0x92C43F6D: return "_Eps";
-	case 0x96E1E748: return "tls_mutex_attr";
-	case 0x985FC057: return "_Dbl";
-	case 0x9C8454C9: return "_LSnan";
-	case 0xAA860D4C: return "_Wctype";
-	case 0xB5B84F80: return "_LDenorm";
-	case 0xB5D2F53B: return "_Touptab";
-	case 0xB6F5F98C: return "_FRteps";
-	case 0xD59C193C: return "_Nan";
-	case 0xD698385D: return "_Ldbl";
-	case 0xD97B0687: return "_Ctype";
-	case 0xE0BC8D86: return "_Loctab";
-	case 0xEACE53D6: return "_FDenorm";
-	case 0xECA056DF: return "_Locale";
-	case 0xEF25075B: return "_FXbig";
-	case 0xFB2BD688: return "_Stdout";
-	case 0xFEFBE065: return "_Stderr";
-	case 0xFF2F0CC7: return "_FEps";
+	case 0x210b2f6e: return "_FNan";
+	case 0x2418f6c0: return "__TT800";
+	case 0x2470d3bc: return "_Hugeval";
+	case 0x26a34f81: return "_Flt";
+	case 0x277a84bb: return "_Mutex_attr";
+	case 0x29e76a6d: return "_LXbig";
+	case 0x2cf8b5d1: return "_Wctrans";
+	case 0x32e56b1a: return "_Stdin";
+	case 0x3916a06a: return "_FILE_P_Head";
+	case 0x45ec2df6: return "_LEps";
+	case 0x529d4301: return "_Denorm";
+	case 0x57dbcf27: return "_Inf";
+	case 0x5ff11eb4: return "_FZero";
+	case 0x620967c9: return "_Mbcurmax";
+	case 0x6524499e: return "_FInf";
+	case 0x67d1406b: return "__ctype_ptr";
+	case 0x6a09df41: return "_LRteps";
+	case 0x73898db8: return "environ";
+	case 0x76628efb: return "_FSnan";
+	case 0x790b0082: return "_Xbig";
+	case 0x7aff3242: return "_Snan";
+	case 0x7bc88211: return "_Tolotab";
+	case 0x7f456af2: return "_Rteps";
+	case 0x81acf7c1: return "_LZero";
+	case 0x8f87ed0c: return "_Times";
+	case 0x92c43f6d: return "_Eps";
+	case 0x96e1e748: return "tls_mutex_attr";
+	case 0x985fc057: return "_Dbl";
+	case 0x9c8454c9: return "_LSnan";
+	case 0xaa860d4c: return "_Wctype";
+	case 0xb5b84f80: return "_LDenorm";
+	case 0xb5d2f53b: return "_Touptab";
+	case 0xb6f5f98c: return "_FRteps";
+	case 0xd59c193c: return "_Nan";
+	case 0xd698385d: return "_Ldbl";
+	case 0xd97b0687: return "_Ctype";
+	case 0xe0bc8d86: return "_Loctab";
+	case 0xeace53d6: return "_FDenorm";
+	case 0xeca056df: return "_Locale";
+	case 0xef25075b: return "_FXbig";
+	case 0xfb2bd688: return "_Stdout";
+	case 0xfefbe065: return "_Stderr";
+	case 0xff2f0cc7: return "_FEps";
 	}
 
 	if (module == "sys_libm") switch (vnid)
 	{
-	case 0x1CF745BC: return "_LErf_one";
-	case 0x2259EF96: return "_LGamma_big";
-	case 0x3ACAD7F1: return "_Erf_small";
-	case 0x3FB8629D: return "_FErf_one";
-	case 0x42EB9508: return "_Fenv0";
-	case 0x4AF28F31: return "_FErf_small";
-	case 0xA8D907FF: return "_LErf_small";
-	case 0xAD443E79: return "_Erf_one";
-	case 0xE9892674: return "_FGamma_big";
-	case 0xF39005FC: return "_Gamma_big";
+	case 0x1cf745bc: return "_LErf_one";
+	case 0x2259ef96: return "_LGamma_big";
+	case 0x3acad7f1: return "_Erf_small";
+	case 0x3fb8629d: return "_FErf_one";
+	case 0x42eb9508: return "_Fenv0";
+	case 0x4af28f31: return "_FErf_small";
+	case 0xa8d907ff: return "_LErf_small";
+	case 0xad443e79: return "_Erf_one";
+	case 0xe9892674: return "_FGamma_big";
+	case 0xf39005fc: return "_Gamma_big";
 	}
 
 	// Check registered variables
@@ -2468,12 +2524,14 @@ std::vector<ppu_function_t>& ppu_function_manager::access()
 		{
 			LOG_ERROR(PPU, "Unregistered function called (LR=0x%x)", ppu.lr);
 			ppu.gpr[3] = 0;
-			return true;
+			ppu.cia = (u32)ppu.lr & ~3;
+			return false;
 		},
 		[](ppu_thread& ppu) -> bool
 		{
 			ppu.state += cpu_flag::ret;
-			return true;
+			ppu.cia += 4;
+			return false;
 		},
 	};
 

@@ -2,6 +2,7 @@
 #include "Emu/System.h"
 #include "TRP.h"
 #include "Crypto/sha1.h"
+#include "Utilities/StrUtil.h"
 
 TRPLoader::TRPLoader(const fs::file& f)
 	: trp_f(f)
@@ -22,7 +23,7 @@ bool TRPLoader::Install(const std::string& dest, bool show)
 		return false;
 	}
 
-	std::vector<char> buffer; buffer.reserve(65536);
+	std::vector<char> buffer(65536);
 
 	for (const TRPEntry& entry : m_entries)
 	{
@@ -103,6 +104,14 @@ bool TRPLoader::LoadHeader(bool show)
 	return true;
 }
 
+u64 TRPLoader::GetRequiredSpace() const
+{
+	const u64 file_size = m_header.trp_file_size;
+	const u64 file_element_size = u64{1} * m_header.trp_files_count * m_header.trp_element_size;
+
+	return file_size - sizeof(m_header) - file_element_size;
+}
+
 bool TRPLoader::ContainsEntry(const char *filename)
 {
 	for (const TRPEntry& entry : m_entries)
@@ -133,11 +142,11 @@ void TRPLoader::RemoveEntry(const char *filename)
 
 void TRPLoader::RenameEntry(const char *oldname, const char *newname)
 {
-	for (const TRPEntry& entry : m_entries)
+	for (TRPEntry& entry : m_entries)
 	{
 		if (!strcmp(entry.name, oldname))
 		{
-			memcpy((void*)entry.name, newname, 32);
+			strcpy_trunc(entry.name, newname);
 		}
 	}
 }

@@ -1,9 +1,9 @@
 #include "stdafx.h"
 #include "Emu/Cell/PPUModule.h"
 
-namespace vm { using namespace ps3; }
 
-logs::channel cellSysutilAp("cellSysutilAp");
+
+LOG_CHANNEL(cellSysutilAp);
 
 // Return Codes
 enum

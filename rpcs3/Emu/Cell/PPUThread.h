@@ -1,6 +1,5 @@
-#pragma once
+﻿#pragma once
 
-#include "Common.h"
 #include "../CPU/CPUThread.h"
 #include "../Memory/vm.h"
 #include "Utilities/lockless.h"
@@ -14,13 +13,26 @@ enum class ppu_cmd : u32
 	set_args, // Set general-purpose args (+arg cmd)
 	lle_call, // Load addr and rtoc at *arg or *gpr[arg] and execute
 	hle_call, // Execute function by index (arg)
+	ptr_call, // Execute function by pointer
 	initialize, // ppu_initialize()
 	sleep,
+	reset_stack, // resets stack address
 };
 
 // Formatting helper
 enum class ppu_syscall_code : u64
 {
+};
+
+// ppu_thread constructor argument
+struct ppu_thread_params
+{
+	vm::addr_t stack_addr;
+	u32 stack_size;
+	u32 tls_addr;
+	u32 entry;
+	u64 arg0;
+	u64 arg1;
 };
 
 class ppu_thread : public cpu_thread
@@ -30,60 +42,80 @@ public:
 	static const u32 id_step = 1;
 	static const u32 id_count = 2048;
 
-	virtual void on_init(const std::shared_ptr<void>&) override;
+	static void on_cleanup(named_thread<ppu_thread>*);
+
 	virtual std::string get_name() const override;
 	virtual std::string dump() const override;
-	virtual void cpu_task() override;
+	virtual void cpu_task() override final;
 	virtual void cpu_sleep() override;
+	virtual void cpu_mem() override;
+	virtual void cpu_unmem() override;
 	virtual ~ppu_thread() override;
 
-	ppu_thread(const std::string& name, u32 prio = 0, u32 stack = 0x10000);
+	ppu_thread(const ppu_thread_params&, std::string_view name, u32 prio, int detached = 0);
 
 	u64 gpr[32] = {}; // General-Purpose Registers
 	f64 fpr[32] = {}; // Floating Point Registers
 	v128 vr[32] = {}; // Vector Registers
 
-	alignas(16) bool cr[32] = {}; // Condition Registers (unpacked)
-
-	alignas(16) struct // Floating-Point Status and Control Register (unpacked)
+	struct cr_bits
 	{
-		// TODO
-		bool _start[16]{};
-		bool fl{}; // FPCC.FL
-		bool fg{}; // FPCC.FG
-		bool fe{}; // FPCC.FE
-		bool fu{}; // FPCC.FU
-		bool _end[12]{};
+		alignas(16) u8 bits[32];
+
+		u8& operator [](std::size_t i)
+		{
+			return bits[i];
+		}
+
+		// Pack CR bits
+		u32 pack() const
+		{
+			u32 result{};
+
+			for (u32 bit : bits)
+			{
+				result <<= 1;
+				result |= bit;
+			}
+
+			return result;
+		}
+
+		// Unpack CR bits
+		void unpack(u32 value)
+		{
+			for (u8& b : bits)
+			{
+				b = value & 0x1;
+				value >>= 1;
+			}
+		}
+	};
+
+	cr_bits cr{}; // Condition Registers (unpacked)
+
+	// Floating-Point Status and Control Register (unpacked)
+	union
+	{
+		struct
+		{
+			// TODO
+			bool _start[16];
+			bool fl; // FPCC.FL
+			bool fg; // FPCC.FG
+			bool fe; // FPCC.FE
+			bool fu; // FPCC.FU
+			bool _end[12];
+		};
+
+		cr_bits bits;
 	}
-	fpscr;
+	fpscr{};
 
 	u64 lr{}; // Link Register
 	u64 ctr{}; // Counter Register
 	u32 vrsave{0xffffffff}; // VR Save Register
 	u32 cia{}; // Current Instruction Address
-
-	// Pack CR bits
-	u32 cr_pack() const
-	{
-		u32 result{};
-
-		for (u32 bit : cr)
-		{
-			result = (result << 1) | bit;
-		}
-
-		return result;
-	}
-
-	// Unpack CR bits
-	void cr_unpack(u32 value)
-	{
-		for (bool& b : cr)
-		{
-			b = (value & 0x1) != 0;
-			value >>= 1;
-		}
-	}
 
 	// Fixed-Point Exception Register (abstract representation)
 	struct
@@ -94,7 +126,7 @@ public:
 		u8 cnt{};  // 0..6
 	}
 	xer;
-	
+
 	/*
 		Saturation. A sticky status bit indicating that some field in a saturating instruction saturated since the last
 		time SAT was cleared. In other words when SAT = '1' it remains set to '1' until it is cleared to '0' by an
@@ -126,16 +158,16 @@ public:
 			exception, the corresponding element in the target vr is cleared to '0'. In both cases, the '0'
 			has the same sign as the denormalized or underflowing value.
 	*/
-	bool nj = true;
+	bool nj = false;
 
 	u32 raddr{0}; // Reservation addr
 	u64 rtime{0};
 	u64 rdata{0}; // Reservation data
-	
+
 	atomic_t<u32> prio{0}; // Thread priority (0..3071)
 	const u32 stack_size; // Stack size
 	const u32 stack_addr; // Stack address
-	
+
 	atomic_t<u32> joiner{~0u}; // Joining thread (-1 if detached)
 
 	lf_fifo<atomic_t<cmd64>, 127> cmd_queue; // Command queue for asynchronous operations.
@@ -149,7 +181,7 @@ public:
 	u64 start_time{0}; // Sleep start timepoint
 	const char* last_function{}; // Last function name for diagnosis, optimized for speed.
 
-	const std::string m_name; // Thread name
+	lf_value<std::string> ppu_name; // Thread name
 
 	be_t<u64>* get_stack_arg(s32 i, u64 align = alignof(u64));
 	void exec_task();
@@ -235,6 +267,20 @@ struct ppu_gpr_cast_impl<vm::_ref_base<T, AT>, void>
 	static inline vm::_ref_base<T, AT> from(const u64 reg)
 	{
 		return vm::cast(ppu_gpr_cast_impl<AT>::from(reg));
+	}
+};
+
+template <>
+struct ppu_gpr_cast_impl<vm::null_t, void>
+{
+	static inline u64 to(const vm::null_t& value)
+	{
+		return 0;
+	}
+
+	static inline vm::null_t from(const u64 reg)
+	{
+		return vm::null;
 	}
 };
 

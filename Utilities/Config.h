@@ -49,8 +49,9 @@ namespace cfg
 		_base(type _type, class node* owner, const std::string& name);
 
 	public:
-		// Disallow copy/move constructors and assignments
 		_base(const _base&) = delete;
+
+		_base& operator=(const _base&) = delete;
 
 		// Get type
 		type get_type() const { return m_type; }
@@ -118,7 +119,7 @@ namespace cfg
 		bool m_value;
 
 	public:
-		const bool def;
+		bool def;
 
 		_bool(node* owner, const std::string& name, bool def = false)
 			: _base(type::_bool, owner, name)
@@ -128,6 +129,11 @@ namespace cfg
 		}
 
 		explicit operator bool() const
+		{
+			return m_value;
+		}
+
+		const bool& get() const
 		{
 			return m_value;
 		}
@@ -150,6 +156,11 @@ namespace cfg
 
 			return true;
 		}
+
+		void set(const bool& value)
+		{
+			m_value = value;
+		}
 	};
 
 	// Value node with fixed set of possible values, each maps to an enum value of type T.
@@ -169,6 +180,11 @@ namespace cfg
 		}
 
 		operator T() const
+		{
+			return m_value;
+		}
+
+		const T& get() const
 		{
 			return m_value;
 		}
@@ -217,7 +233,7 @@ namespace cfg
 		int_type m_value;
 
 	public:
-		const int_type def;
+		int_type def;
 
 		_int(node* owner, const std::string& name, int_type def = std::min<int_type>(Max, std::max<int_type>(Min, 0)))
 			: _base(type::_int, owner, name)
@@ -227,6 +243,11 @@ namespace cfg
 		}
 
 		operator int_type() const
+		{
+			return m_value;
+		}
+
+		const int_type& get() const
 		{
 			return m_value;
 		}
@@ -253,6 +274,11 @@ namespace cfg
 			return false;
 		}
 
+		void set(const s64& value)
+		{
+			m_value = static_cast<int_type>(value);
+		}
+
 		std::vector<std::string> to_list() const override
 		{
 			return make_int_range(Min, Max);
@@ -271,7 +297,7 @@ namespace cfg
 		std::string m_value;
 
 	public:
-		const std::string def;
+		std::string def;
 
 		string(node* owner, const std::string& name, const std::string& def = {})
 			: _base(type::string, owner, name)
@@ -321,7 +347,7 @@ namespace cfg
 		{
 		}
 
-		std::set<std::string> get_set() const
+		const std::set<std::string>& get_set() const
 		{
 			return m_set;
 		}
@@ -356,7 +382,7 @@ namespace cfg
 		{
 		}
 
-		std::map<std::string, logs::level> get_map() const
+		const std::map<std::string, logs::level>& get_map() const
 		{
 			return m_map;
 		}

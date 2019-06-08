@@ -2,7 +2,7 @@
 
 #include "stdafx.h"
 #include "Emu/System.h"
-#include "Emu/Memory/Memory.h"
+#include "Emu/Memory/vm.h"
 #include "Emu/CPU/CPUThread.h"
 #include "Emu/CPU/CPUDisAsm.h"
 #include "Emu/Cell/PPUThread.h"
@@ -17,11 +17,11 @@
 
 class instruction_editor_dialog : public QDialog
 {
-	u32 pc;
-	u32 cpu_offset;
-	CPUDisAsm* disasm;
-	QLineEdit* t2_instr;
-	QLabel* t3_preview;
+	u32 m_pc;
+	u32 m_cpu_offset;
+	CPUDisAsm* m_disasm;
+	QLineEdit* m_instr;
+	QLabel* m_preview;
 
 public:
 	std::weak_ptr<cpu_thread> cpu;

@@ -1,9 +1,11 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "GLHelpers.h"
+#include "GLTexture.h"
 #include "Utilities/Log.h"
 
 namespace gl
 {
+	blitter *g_hw_blitter = nullptr;
 	capabilities g_driver_caps;
 	const fbo screen{};
 
@@ -19,10 +21,11 @@ namespace gl
 		case rsx::primitive_type::triangle_strip: return GL_TRIANGLE_STRIP;
 		case rsx::primitive_type::triangle_fan: return GL_TRIANGLE_FAN;
 		case rsx::primitive_type::quads: return GL_TRIANGLES;
-		case rsx::primitive_type::quad_strip: return GL_TRIANGLES;
+		case rsx::primitive_type::quad_strip: return GL_TRIANGLE_STRIP;
 		case rsx::primitive_type::polygon: return GL_TRIANGLES;
+		default:
+			fmt::throw_exception("unknown primitive type" HERE);
 		}
-		fmt::throw_exception("unknow primitive type" HERE);
 	}
 
 #ifdef WIN32
@@ -33,11 +36,15 @@ namespace gl
 		switch (type)
 		{
 		case GL_DEBUG_TYPE_ERROR:
+		{
 			LOG_ERROR(RSX, "%s", message);
 			return;
+		}
 		default:
+		{
 			LOG_WARNING(RSX, "%s", message);
 			return;
+		}
 		}
 	}
 #endif
@@ -72,7 +79,7 @@ namespace gl
 	{
 		bind_as(target::read_frame_buffer);
 		dst.bind_as(target::draw_frame_buffer);
-		__glcheck glBlitFramebuffer(
+		glBlitFramebuffer(
 			src_area.x1, src_area.y1, src_area.x2, src_area.y2,
 			dst_area.x1, dst_area.y1, dst_area.x2, dst_area.y2,
 			(GLbitfield)buffers_, (GLenum)filter_);
@@ -120,7 +127,7 @@ namespace gl
 	{
 		save_binding_state save(*this);
 		GLenum buf = buffer.id();
-		__glcheck glDrawBuffers(1, &buf);
+		glDrawBuffers(1, &buf);
 	}
 
 	void fbo::draw_buffers(const std::initializer_list<attachment>& indexes) const
@@ -132,7 +139,7 @@ namespace gl
 		for (auto &index : indexes)
 			ids.push_back(index.id());
 
-		__glcheck glDrawBuffers((GLsizei)ids.size(), ids.data());
+		glDrawBuffers((GLsizei)ids.size(), ids.data());
 	}
 
 	void fbo::read_buffer(const attachment& buffer) const
@@ -140,13 +147,13 @@ namespace gl
 		save_binding_state save(*this);
 		GLenum buf = buffer.id();
 
-		__glcheck glReadBuffer(buf);
+		glReadBuffer(buf);
 	}
 
 	void fbo::draw_arrays(rsx::primitive_type mode, GLsizei count, GLint first) const
 	{
 		save_binding_state save(*this);
-		__glcheck glDrawArrays(draw_mode(mode), first, count);
+		glDrawArrays(draw_mode(mode), first, count);
 	}
 
 	void fbo::draw_arrays(const buffer& buffer, rsx::primitive_type mode, GLsizei count, GLint first) const
@@ -164,19 +171,19 @@ namespace gl
 	void fbo::draw_elements(rsx::primitive_type mode, GLsizei count, indices_type type, const GLvoid *indices) const
 	{
 		save_binding_state save(*this);
-		__glcheck glDrawElements(draw_mode(mode), count, (GLenum)type, indices);
+		glDrawElements(draw_mode(mode), count, (GLenum)type, indices);
 	}
 
 	void fbo::draw_elements(const buffer& buffer, rsx::primitive_type mode, GLsizei count, indices_type type, const GLvoid *indices) const
 	{
 		buffer.bind(buffer::target::array);
-		__glcheck glDrawElements(draw_mode(mode), count, (GLenum)type, indices);
+		glDrawElements(draw_mode(mode), count, (GLenum)type, indices);
 	}
 
 	void fbo::draw_elements(rsx::primitive_type mode, GLsizei count, indices_type type, const buffer& indices, size_t indices_buffer_offset) const
 	{
 		indices.bind(buffer::target::element_array);
-		__glcheck glDrawElements(draw_mode(mode), count, (GLenum)type, (GLvoid*)indices_buffer_offset);
+		glDrawElements(draw_mode(mode), count, (GLenum)type, (GLvoid*)indices_buffer_offset);
 	}
 
 	void fbo::draw_elements(const buffer& buffer_, rsx::primitive_type mode, GLsizei count, indices_type type, const buffer& indices, size_t indices_buffer_offset) const
@@ -294,242 +301,39 @@ namespace gl
 		m_id = id;
 	}
 
-	void texture::settings::apply(const texture &texture) const
+	void fbo::set_extents(size2i extents)
 	{
-		save_binding_state save(texture);
+		m_size = extents;
+	}
 
-		texture.pixel_unpack_settings().apply();
+	size2i fbo::get_extents() const
+	{
+		return m_size;
+	}
 
-		if (compressed_format(m_internal_format))
+	bool fbo::matches(const std::array<GLuint, 4>& color_targets, GLuint depth_stencil_target) const
+	{
+		for (u32 index = 0; index < 4; ++index)
 		{
-			int compressed_image_size = m_compressed_image_size;
-			if (!compressed_image_size)
+			if (color[index].resource_id() != color_targets[index])
 			{
-				switch (m_internal_format)
-				{
-				case texture::internal_format::compressed_rgb_s3tc_dxt1:
-					compressed_image_size = ((m_width + 2) / 3) * ((m_height + 2) / 3) * 6;
-					break;
-
-				case texture::internal_format::compressed_rgba_s3tc_dxt1:
-					compressed_image_size = ((m_width + 3) / 4) * ((m_height + 3) / 4) * 8;
-					break;
-
-				case texture::internal_format::compressed_rgba_s3tc_dxt3:
-				case texture::internal_format::compressed_rgba_s3tc_dxt5:
-					compressed_image_size = ((m_width + 3) / 4) * ((m_height + 3) / 4) * 16;
-					break;
-				}
+				return false;
 			}
-
-			__glcheck glCompressedTexImage2D((GLenum)m_parent->get_target(), m_level, (GLint)m_internal_format, m_width, m_height, 0, compressed_image_size, m_pixels);
 		}
-		else
+
+		const auto depth_resource = depth.resource_id() | depth_stencil.resource_id();
+		return (depth_resource == depth_stencil_target);
+	}
+
+	bool fbo::references_any(const std::vector<GLuint>& resources) const
+	{
+		for (const auto &e : m_resource_bindings)
 		{
-			__glcheck glTexImage2D((GLenum)m_parent->get_target(), m_level, (GLint)m_internal_format, m_width, m_height, 0, (GLint)m_format, (GLint)m_type, m_pixels);
+			if (std::find(resources.begin(), resources.end(), e.second) != resources.end())
+				return true;
 		}
 
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_MAX_LEVEL, m_max_level);
-
-		if (m_pixels)
-		{
-			__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_GENERATE_MIPMAP, m_generate_mipmap ? GL_TRUE : GL_FALSE);
-		}
-
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_WRAP_S, (GLint)m_wrap_s);
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_WRAP_T, (GLint)m_wrap_t);
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_WRAP_R, (GLint)m_wrap_r);
-
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_COMPARE_MODE, (GLint)m_compare_mode);
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_COMPARE_FUNC, (GLint)m_compare_func);
-
-		__glcheck glTexParameterf((GLenum)m_parent->get_target(), GL_TEXTURE_MIN_LOD, m_max_lod);
-		__glcheck glTexParameterf((GLenum)m_parent->get_target(), GL_TEXTURE_MAX_LOD, m_min_lod);
-		__glcheck glTexParameterf((GLenum)m_parent->get_target(), GL_TEXTURE_LOD_BIAS, m_lod);
-
-		__glcheck glTexParameterfv((GLenum)m_parent->get_target(), GL_TEXTURE_BORDER_COLOR, m_border_color.rgba);
-
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_MIN_FILTER, (GLint)m_min_filter);
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_MAG_FILTER, (GLint)m_mag_filter);
-
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_SWIZZLE_R, (GLint)m_swizzle_r);
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_SWIZZLE_G, (GLint)m_swizzle_g);
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_SWIZZLE_B, (GLint)m_swizzle_b);
-		__glcheck glTexParameteri((GLenum)m_parent->get_target(), GL_TEXTURE_SWIZZLE_A, (GLint)m_swizzle_a);
-
-		__glcheck glTexParameterf((GLenum)m_parent->get_target(), GL_TEXTURE_MAX_ANISOTROPY_EXT, m_aniso);
-	}
-
-	void texture::settings::apply()
-	{
-		if (m_parent)
-		{
-			apply(*m_parent);
-			m_parent = nullptr;
-		}
-	}
-
-	texture::settings& texture::settings::swizzle(texture::channel r, texture::channel g, texture::channel b, texture::channel a)
-	{
-		m_swizzle_r = r;
-		m_swizzle_g = g;
-		m_swizzle_b = b;
-		m_swizzle_a = a;
-
-		return *this;
-	}
-
-	texture::settings& texture::settings::format(texture::format format)
-	{
-		m_format = format;
-		return *this;
-	}
-
-	texture::settings& texture::settings::type(texture::type type)
-	{
-		m_type = type;
-		return *this;
-	}
-
-	texture::settings& texture::settings::internal_format(texture::internal_format format)
-	{
-		m_internal_format = format;
-		return *this;
-	}
-
-	texture::settings& texture::settings::filter(min_filter min_filter, gl::filter mag_filter)
-	{
-		m_min_filter = min_filter;
-		m_mag_filter = mag_filter;
-
-		return *this;
-	}
-
-	texture::settings& texture::settings::width(uint width)
-	{
-		m_width = width;
-		return *this;
-	}
-
-	texture::settings& texture::settings::height(uint height)
-	{
-		m_height = height;
-		return *this;
-	}
-
-	texture::settings& texture::settings::size(sizei size)
-	{
-		return width(size.width).height(size.height);
-	}
-
-	texture::settings& texture::settings::level(int value)
-	{
-		m_level = value;
-		return *this;
-	}
-
-	texture::settings& texture::settings::compressed_image_size(int size)
-	{
-		m_compressed_image_size = size;
-		return *this;
-	}
-
-	texture::settings& texture::settings::pixels(const void* pixels)
-	{
-		m_pixels = pixels;
-		return *this;
-	}
-
-	texture::settings& texture::settings::aniso(float value)
-	{
-		m_aniso = value;
-		return *this;
-	}
-
-	texture::settings& texture::settings::compare_mode(texture::compare_mode value)
-	{
-		m_compare_mode = value;
-		return *this;
-	}
-	texture::settings& texture::settings::compare_func(texture::compare_func value)
-	{
-		m_compare_func = value;
-		return *this;
-	}
-	texture::settings& texture::settings::compare(texture::compare_func func, texture::compare_mode mode)
-	{
-		return compare_func(func).compare_mode(mode);
-	}
-
-	texture::settings& texture::settings::wrap_s(texture::wrap value)
-	{
-		m_wrap_s = value;
-		return *this;
-	}
-	texture::settings& texture::settings::wrap_t(texture::wrap value)
-	{
-		m_wrap_t = value;
-		return *this;
-	}
-	texture::settings& texture::settings::wrap_r(texture::wrap value)
-	{
-		m_wrap_r = value;
-		return *this;
-	}
-	texture::settings& texture::settings::wrap(texture::wrap s, texture::wrap t, texture::wrap r)
-	{
-		return wrap_s(s).wrap_t(t).wrap_r(r);
-	}
-
-	texture::settings& texture::settings::max_lod(float value)
-	{
-		m_max_lod = value;
-		return *this;
-	}
-	texture::settings& texture::settings::min_lod(float value)
-	{
-		m_min_lod = value;
-		return *this;
-	}
-	texture::settings& texture::settings::lod(float value)
-	{
-		m_lod = value;
-		return *this;
-	}
-	texture::settings& texture::settings::max_level(int value)
-	{
-		m_max_level = value;
-		return *this;
-	}
-	texture::settings& texture::settings::generate_mipmap(bool value)
-	{
-		m_generate_mipmap = value;
-		return *this;
-	}
-	texture::settings& texture::settings::mipmap(int level, int max_level, float lod, float min_lod, float max_lod, bool generate)
-	{
-		return this->level(level).max_level(max_level).lod(lod).min_lod(min_lod).max_lod(max_lod).generate_mipmap(generate);
-	}
-
-	texture::settings& texture::settings::border_color(color4f value)
-	{
-		m_border_color = value;
-		return *this;
-	}
-
-	texture_view texture::with_level(int level)
-	{
-		return{ get_target(), id() };
-	}
-
-	texture::settings texture::config()
-	{
-		return{ this };
-	}
-
-	void texture::config(const settings& settings_)
-	{
-		settings_.apply(*this);
+		return false;
 	}
 
 	bool is_primitive_native(rsx::primitive_type in)
@@ -543,12 +347,163 @@ namespace gl
 		case rsx::primitive_type::triangles:
 		case rsx::primitive_type::triangle_strip:
 		case rsx::primitive_type::triangle_fan:
+		case rsx::primitive_type::quad_strip:
 			return true;
 		case rsx::primitive_type::quads:
-		case rsx::primitive_type::quad_strip:
 		case rsx::primitive_type::polygon:
 			return false;
+		default:
+			fmt::throw_exception("unknown primitive type" HERE);
 		}
-		fmt::throw_exception("unknown primitive type" HERE);
+	}
+
+	attrib_t vao::operator[](u32 index) const noexcept
+	{
+		return attrib_t(index);
+	}
+
+	void blitter::scale_image(gl::command_context& cmd, const texture* src, texture* dst, areai src_rect, areai dst_rect, bool linear_interpolation,
+		bool is_depth_copy, const rsx::typeless_xfer& xfer_info)
+	{
+		std::unique_ptr<texture> typeless_src;
+		std::unique_ptr<texture> typeless_dst;
+		const gl::texture* real_src = src;
+		const gl::texture* real_dst = dst;
+
+		if (xfer_info.src_is_typeless)
+		{
+			const auto internal_width = (u16)(src->width() * xfer_info.src_scaling_hint);
+			const auto internal_fmt = xfer_info.src_native_format_override ?
+				GLenum(xfer_info.src_native_format_override) :
+				get_sized_internal_format(xfer_info.src_gcm_format);
+
+			typeless_src = std::make_unique<texture>(GL_TEXTURE_2D, internal_width, src->height(), 1, 1, internal_fmt);
+			copy_typeless(typeless_src.get(), src);
+
+			real_src = typeless_src.get();
+			src_rect.x1 = (u16)(src_rect.x1 * xfer_info.src_scaling_hint);
+			src_rect.x2 = (u16)(src_rect.x2 * xfer_info.src_scaling_hint);
+		}
+
+		if (xfer_info.dst_is_typeless)
+		{
+			const auto internal_width = (u16)(dst->width() * xfer_info.dst_scaling_hint);
+			const auto internal_fmt = xfer_info.dst_native_format_override ?
+				GLenum(xfer_info.dst_native_format_override) :
+				get_sized_internal_format(xfer_info.dst_gcm_format);
+
+			typeless_dst = std::make_unique<texture>(GL_TEXTURE_2D, internal_width, dst->height(), 1, 1, internal_fmt);
+			copy_typeless(typeless_dst.get(), dst);
+
+			real_dst = typeless_dst.get();
+			dst_rect.x1 = (u16)(dst_rect.x1 * xfer_info.dst_scaling_hint);
+			dst_rect.x2 = (u16)(dst_rect.x2 * xfer_info.dst_scaling_hint);
+		}
+
+		filter interp = (linear_interpolation && !is_depth_copy) ? filter::linear : filter::nearest;
+		GLenum attachment;
+		gl::buffers target;
+
+		if (is_depth_copy)
+		{
+			verify(HERE), real_src->aspect() == real_dst->aspect();
+			if (real_dst->aspect() & gl::image_aspect::stencil)
+			{
+				attachment = GL_DEPTH_STENCIL_ATTACHMENT;
+				target = gl::buffers::depth_stencil;
+			}
+			else
+			{
+				attachment = GL_DEPTH_ATTACHMENT;
+				target = gl::buffers::depth;
+			}
+		}
+		else
+		{
+			attachment = GL_COLOR_ATTACHMENT0;
+			target = gl::buffers::color;
+		}
+
+		cmd.drv->enable(GL_FALSE, GL_SCISSOR_TEST);
+
+		save_binding_state saved;
+
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, blit_src.id());
+		glFramebufferTexture2D(GL_READ_FRAMEBUFFER, attachment, GL_TEXTURE_2D, real_src->id(), 0);
+
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, blit_dst.id());
+		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, attachment, GL_TEXTURE_2D, real_dst->id(), 0);
+
+		if (xfer_info.flip_horizontal)
+		{
+			src_rect.flip_horizontal();
+		}
+
+		if (xfer_info.flip_vertical)
+		{
+			src_rect.flip_vertical();
+		}
+
+		glBlitFramebuffer(src_rect.x1, src_rect.y1, src_rect.x2, src_rect.y2,
+			dst_rect.x1, dst_rect.y1, dst_rect.x2, dst_rect.y2,
+			(GLbitfield)target, (GLenum)interp);
+
+		if (xfer_info.dst_is_typeless)
+		{
+			// Transfer contents from typeless dst back to original dst
+			copy_typeless(dst, typeless_dst.get());
+		}
+
+		// Release the attachments explicitly (not doing so causes glitches, e.g Journey Menu)
+		glFramebufferTexture2D(GL_READ_FRAMEBUFFER, attachment, GL_TEXTURE_2D, GL_NONE, 0);
+		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, attachment, GL_TEXTURE_2D, GL_NONE, 0);
+	}
+
+	void blitter::fast_clear_image(gl::command_context& cmd, const texture* dst, const color4f& color)
+	{
+		save_binding_state saved;
+
+		blit_dst.bind();
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dst->id(), 0);
+		blit_dst.check();
+
+		cmd.drv->clear_color(color);
+		cmd.drv->color_mask(true, true, true, true);
+
+		glClear(GL_COLOR_BUFFER_BIT);
+	}
+
+	void blitter::fast_clear_image(gl::command_context& cmd, const texture* dst, float depth, u8 stencil)
+	{
+		GLenum attachment;
+		GLbitfield clear_mask;
+
+		switch (const auto fmt = dst->get_internal_format())
+		{
+		case texture::internal_format::depth:
+		case texture::internal_format::depth16:
+			clear_mask = GL_DEPTH_BUFFER_BIT;
+			attachment = GL_DEPTH_ATTACHMENT;
+			break;
+		case texture::internal_format::depth_stencil:
+		case texture::internal_format::depth24_stencil8:
+		case texture::internal_format::depth32f_stencil8:
+			clear_mask = GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+			attachment = GL_DEPTH_STENCIL_ATTACHMENT;
+			break;
+		default:
+			fmt::throw_exception("Invalid texture passed to clear depth function, format=0x%x", (u32)fmt);
+		}
+
+		save_binding_state saved;
+
+		blit_dst.bind();
+		glFramebufferTexture2D(GL_FRAMEBUFFER, attachment, GL_TEXTURE_2D, dst->id(), 0);
+		blit_dst.check();
+
+		cmd.drv->depth_mask(GL_TRUE);
+		cmd.drv->stencil_mask(0xFF);
+
+		glClear(clear_mask);
 	}
 }

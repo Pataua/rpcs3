@@ -2,7 +2,7 @@
 #include "Emu/Cell/PPUModule.h"
 #include "cellImeJp.h"
 
-logs::channel cellImeJp("cellImeJp");
+LOG_CHANNEL(cellImeJp);
 
 // Return Codes
 enum
@@ -36,6 +36,12 @@ s32 cellImeJpOpen3()
 {
 	std::memset(s_ime_string, 0, sizeof(s_ime_string));
 	cellImeJp.error("cellImeJpOpen3()");
+	return CELL_OK;
+}
+
+s32 cellImeJpOpenExt()
+{
+	UNIMPLEMENTED_FUNC(cellImeJp);
 	return CELL_OK;
 }
 
@@ -280,6 +286,7 @@ DECLARE(ppu_module_manager::cellImeJp)("cellImeJpUtility", []()
 	REG_FUNC(cellImeJpUtility, cellImeJpOpen);
 	REG_FUNC(cellImeJpUtility, cellImeJpOpen2);
 	REG_FUNC(cellImeJpUtility, cellImeJpOpen3);
+	REG_FUNC(cellImeJpUtility, cellImeJpOpenExt);
 	REG_FUNC(cellImeJpUtility, cellImeJpClose);
 
 	REG_FUNC(cellImeJpUtility, cellImeJpSetKanaInputMode);

@@ -1,6 +1,7 @@
-#pragma once
+﻿#pragma once
 #include "Utilities/types.h"
 #include "Utilities/BitField.h"
+#include "Utilities/StrFmt.h"
 #include <tuple>
 #include "gcm_enums.h"
 #pragma warning(disable:4503)
@@ -27,7 +28,7 @@ namespace
 		case rsx::vertex_base_type::cmp: return "CMP";
 		case rsx::vertex_base_type::ub256: return "Unsigned byte unormalized";
 		}
-		throw;
+		fmt::throw_exception("Unexpected enum found" HERE);
 	}
 }
 
@@ -701,6 +702,46 @@ struct registers_decoder<NV4097_SET_DEPTH_MASK>
 };
 
 template<>
+struct registers_decoder<NV4097_SET_ZMIN_MAX_CONTROL>
+{
+	struct decoded_type
+	{
+	private:
+		union
+		{
+			u32 raw_value;
+			bitfield_decoder_t<0, 4> depth_clip_enabled;
+			bitfield_decoder_t<4, 4> depth_clamp_enabled;
+			bitfield_decoder_t<8, 4> depth_clip_ignore_w;
+		} m_data;
+	public:
+		decoded_type(u32 raw_value) { m_data.raw_value = raw_value; }
+
+		bool depth_clip_enabled() const
+		{
+			return bool(m_data.depth_clip_enabled);
+		}
+
+		bool depth_clamp_enabled() const
+		{
+			return bool(m_data.depth_clamp_enabled);
+		}
+
+		bool depth_clip_ignore_w() const
+		{
+			return bool(m_data.depth_clip_ignore_w);
+		}
+	};
+
+	static std::string dump(decoded_type &&decoded_values)
+	{
+		return "Depth: clip_enabled " + print_boolean(decoded_values.depth_clip_enabled()) +
+			" clamp " + print_boolean(decoded_values.depth_clamp_enabled()) +
+			" ignore_w " + print_boolean(decoded_values.depth_clip_ignore_w());
+	}
+};
+
+template<>
 struct registers_decoder<NV4097_SET_ALPHA_TEST_ENABLE>
 {
 	struct decoded_type
@@ -1106,7 +1147,7 @@ struct registers_decoder<NV4097_SET_DEPTH_BOUNDS_MIN>
 
 		f32 depth_bound_min() const
 		{
-			return reinterpret_cast<const f32&>(m_data.depth_bound_min);
+			return std::bit_cast<f32, u32>(m_data.depth_bound_min);
 		}
 	};
 
@@ -1132,7 +1173,7 @@ struct registers_decoder<NV4097_SET_DEPTH_BOUNDS_MAX>
 
 		f32 depth_bound_max() const
 		{
-			return reinterpret_cast<const f32&>(m_data.depth_bound_max);
+			return std::bit_cast<f32, u32>(m_data.depth_bound_max);
 		}
 	};
 
@@ -1158,7 +1199,7 @@ struct registers_decoder<NV4097_SET_FOG_PARAMS>
 
 		f32 fog_param_0() const
 		{
-			return reinterpret_cast<const f32&>(m_data.fog_param_0);
+			return std::bit_cast<f32, u32>(m_data.fog_param_0);
 		}
 	};
 
@@ -1184,7 +1225,7 @@ struct registers_decoder<NV4097_SET_FOG_PARAMS + 1>
 
 		f32 fog_param_1() const
 		{
-			return reinterpret_cast<const f32&>(m_data.fog_param_1);
+			return std::bit_cast<f32, u32>(m_data.fog_param_1);
 		}
 	};
 
@@ -1210,7 +1251,7 @@ struct registers_decoder<NV4097_SET_CLIP_MIN>
 
 		f32 clip_min() const
 		{
-			return reinterpret_cast<const f32&>(m_data.clip_min);
+			return std::bit_cast<f32, u32>(m_data.clip_min);
 		}
 	};
 
@@ -1236,7 +1277,7 @@ struct registers_decoder<NV4097_SET_CLIP_MAX>
 
 		f32 clip_max() const
 		{
-			return reinterpret_cast<const f32&>(m_data.clip_max);
+			return std::bit_cast<f32, u32>(m_data.clip_max);
 		}
 	};
 
@@ -1262,7 +1303,7 @@ struct registers_decoder<NV4097_SET_POLYGON_OFFSET_SCALE_FACTOR>
 
 		f32 polygon_offset_scale_factor() const
 		{
-			return reinterpret_cast<const f32&>(m_data.polygon_offset_scale_factor);
+			return std::bit_cast<f32, u32>(m_data.polygon_offset_scale_factor);
 		}
 	};
 
@@ -1288,7 +1329,7 @@ struct registers_decoder<NV4097_SET_POLYGON_OFFSET_BIAS>
 
 		f32 polygon_offset_scale_bias() const
 		{
-			return reinterpret_cast<const f32&>(m_data.polygon_offset_scale_bias);
+			return std::bit_cast<f32, u32>(m_data.polygon_offset_scale_bias);
 		}
 	};
 
@@ -1314,7 +1355,7 @@ struct registers_decoder<NV4097_SET_VIEWPORT_SCALE>
 
 		f32 viewport_scale_x() const
 		{
-			return reinterpret_cast<const f32&>(m_data.viewport_scale_x);
+			return std::bit_cast<f32, u32>(m_data.viewport_scale_x);
 		}
 	};
 
@@ -1340,7 +1381,7 @@ struct registers_decoder<NV4097_SET_VIEWPORT_SCALE + 1>
 
 		f32 viewport_scale_y() const
 		{
-			return reinterpret_cast<const f32&>(m_data.viewport_scale_y);
+			return std::bit_cast<f32, u32>(m_data.viewport_scale_y);
 		}
 	};
 
@@ -1366,7 +1407,7 @@ struct registers_decoder<NV4097_SET_VIEWPORT_SCALE + 2>
 
 		f32 viewport_scale_z() const
 		{
-			return reinterpret_cast<const f32&>(m_data.viewport_scale_z);
+			return std::bit_cast<f32, u32>(m_data.viewport_scale_z);
 		}
 	};
 
@@ -1392,7 +1433,7 @@ struct registers_decoder<NV4097_SET_VIEWPORT_SCALE + 3>
 
 		f32 viewport_scale_w() const
 		{
-			return reinterpret_cast<const f32&>(m_data.viewport_scale_w);
+			return std::bit_cast<f32, u32>(m_data.viewport_scale_w);
 		}
 	};
 
@@ -1418,7 +1459,7 @@ struct registers_decoder<NV4097_SET_VIEWPORT_OFFSET>
 
 		f32 viewport_offset_x() const
 		{
-			return reinterpret_cast<const f32&>(m_data.viewport_offset_x);
+			return std::bit_cast<f32, u32>(m_data.viewport_offset_x);
 		}
 	};
 
@@ -1444,7 +1485,7 @@ struct registers_decoder<NV4097_SET_VIEWPORT_OFFSET + 1>
 
 		f32 viewport_offset_y() const
 		{
-			return reinterpret_cast<const f32&>(m_data.viewport_offset_y);
+			return std::bit_cast<f32, u32>(m_data.viewport_offset_y);
 		}
 	};
 
@@ -1470,7 +1511,7 @@ struct registers_decoder<NV4097_SET_VIEWPORT_OFFSET + 2>
 
 		f32 viewport_offset_z() const
 		{
-			return reinterpret_cast<const f32&>(m_data.viewport_offset_z);
+			return std::bit_cast<f32, u32>(m_data.viewport_offset_z);
 		}
 	};
 
@@ -1496,7 +1537,7 @@ struct registers_decoder<NV4097_SET_VIEWPORT_OFFSET + 3>
 
 		f32 viewport_offset_w() const
 		{
-			return reinterpret_cast<const f32&>(m_data.viewport_offset_w);
+			return std::bit_cast<f32, u32>(m_data.viewport_offset_w);
 		}
 	};
 
@@ -1864,6 +1905,31 @@ struct registers_decoder<NV4097_SET_SHADER_CONTROL>
 };
 
 template<>
+struct registers_decoder<NV4097_SET_SHADER_PACKER>
+{
+	struct decoded_type
+	{
+	private:
+		union
+		{
+			u32 raw_value;
+		} m_data;
+	public:
+		decoded_type(u32 raw_value) { m_data.raw_value = raw_value; }
+
+		bool srgb_output_enabled() const
+		{
+			return !!m_data.raw_value;
+		}
+	};
+
+	static std::string dump(decoded_type &&decoded_values)
+	{
+		return "Shader packer control: srgb_enabled = " + std::to_string(decoded_values.srgb_output_enabled());
+	}
+};
+
+template<>
 struct registers_decoder<NV4097_SET_VERTEX_DATA_BASE_OFFSET>
 {
 	struct decoded_type
@@ -2040,6 +2106,31 @@ struct registers_decoder<NV406E_SEMAPHORE_OFFSET>
 };
 
 template<>
+struct registers_decoder<NV4097_SET_CONTEXT_DMA_SEMAPHORE>
+{
+	struct decoded_type
+	{
+	private:
+		union
+		{
+			u32 raw_value;
+		} m_data;
+	public:
+		decoded_type(u32 raw_value) { m_data.raw_value = raw_value; }
+
+		u32 context_dma() const
+		{
+			return m_data.raw_value;
+		}
+	};
+
+	static std::string dump(decoded_type &&decoded_values)
+	{
+		return "NV4097 semaphore: context = " + std::to_string(decoded_values.context_dma());
+	}
+};
+
+template<>
 struct registers_decoder<NV4097_SET_SEMAPHORE_OFFSET>
 {
 	struct decoded_type
@@ -2152,9 +2243,22 @@ struct registers_decoder<NV3089_DS_DX>
 	public:
 		decoded_type(u32 raw_value) { m_data.raw_value = raw_value; }
 
-		u32 ds_dx() const
+		// Convert signed fixed point 32-bit format
+		f32 ds_dx() const
 		{
-			return m_data.raw_value;
+			const u32 val = m_data.raw_value;
+
+			if ((val & ~(1<<31)) == 0)
+			{
+				return 0;
+			}
+
+			if ((s32)val < 0)
+			{
+				return 1.f / (((val & ~(1<<31)) / 1048576.f) - 2048.f);
+			}
+
+			return 1048576.f / val;
 		}
 	};
 
@@ -2177,9 +2281,22 @@ struct registers_decoder<NV3089_DT_DY>
 	public:
 		decoded_type(u32 raw_value) { m_data.raw_value = raw_value; }
 
-		u32 dt_dy() const
+		// Convert signed fixed point 32-bit format
+		f32 dt_dy() const
 		{
-			return m_data.raw_value;
+		    const u32 val = m_data.raw_value;
+
+			if ((val & ~(1<<31)) == 0)
+			{
+				return 0;
+			}
+
+			if ((s32)val < 0)
+			{
+				return 1.f / (((val & ~(1<<31)) / 1048576.f) - 2048.f);
+			}
+
+			return 1048576.f / val;
 		}
 	};
 
@@ -2260,7 +2377,7 @@ struct registers_decoder<NV0039_LINE_LENGTH_IN>
 
 	static std::string dump(decoded_type &&decoded_values)
 	{
-		return "NV0039: line lenght input = " + std::to_string(decoded_values.input_line_length());
+		return "NV0039: line length input = " + std::to_string(decoded_values.input_line_length());
 	}
 };
 
@@ -2861,14 +2978,13 @@ struct registers_decoder<NV4097_SET_CULL_FACE>
 		union
 		{
 			u32 raw_value;
-			bitfield_decoder_t<0, 32> cull_face_mode;
 		} m_data;
 	public:
 		decoded_type(u32 raw_value) { m_data.raw_value = raw_value; }
 
 		cull_face cull_face_mode() const
 		{
-			return to_cull_face(m_data.cull_face_mode);
+			return static_cast<cull_face>(m_data.raw_value);
 		}
 	};
 
@@ -3195,6 +3311,11 @@ struct registers_decoder<NV4097_SET_COLOR_MASK>
 		{
 			return bool(m_data.color_a);
 		}
+
+		bool color_write_enabled() const
+		{
+			return m_data.raw_data != 0;
+		}
 	};
 
 	static std::string dump(decoded_type &&decoded_values)
@@ -3374,6 +3495,31 @@ struct registers_decoder<NV4097_SET_LINE_WIDTH>
 };
 
 template<>
+struct registers_decoder<NV4097_SET_POINT_SIZE>
+{
+	struct decoded_type
+	{
+	private:
+		union
+		{
+			u32 raw_data;
+		} m_data;
+	public:
+		decoded_type(u32 raw_value) { m_data.raw_data = raw_value; }
+
+		f32 point_size() const
+		{
+			return std::bit_cast<f32>(m_data.raw_data);
+		}
+	};
+
+	static std::string dump(decoded_type &&decoded_values)
+	{
+		return "Point size: " + std::to_string(decoded_values.point_size());
+	}
+};
+
+template<>
 struct registers_decoder<NV4097_SET_SURFACE_FORMAT>
 {
 	struct decoded_type
@@ -3384,6 +3530,7 @@ struct registers_decoder<NV4097_SET_SURFACE_FORMAT>
 			u32 raw_value;
 			bitfield_decoder_t<0, 5> color_fmt;
 			bitfield_decoder_t<5, 3> depth_fmt;
+			bitfield_decoder_t<8, 4> type;
 			bitfield_decoder_t<12, 4> antialias;
 			bitfield_decoder_t<16, 8> log2width;
 			bitfield_decoder_t<24, 8> log2height;
@@ -3399,6 +3546,11 @@ struct registers_decoder<NV4097_SET_SURFACE_FORMAT>
 		surface_depth_format depth_fmt() const
 		{
 			return to_surface_depth_format(m_data.depth_fmt);
+		}
+
+		surface_raster_type type() const
+		{
+			return static_cast<surface_raster_type>(u8(m_data.type));
 		}
 
 		surface_antialiasing antialias() const
@@ -3452,7 +3604,7 @@ struct registers_decoder<NV4097_SET_ZSTENCIL_CLEAR_VALUE>
 		{
 			if (is_depth_stencil)
 				return m_data.clear_z24;
-			
+
 			return m_data.clear_z16;
 		}
 	};
@@ -3785,6 +3937,31 @@ struct registers_decoder<NV4097_SET_CONTEXT_DMA_REPORT>
 };
 
 template<>
+struct registers_decoder<NV4097_SET_CONTEXT_DMA_NOTIFIES>
+{
+	struct decoded_type
+	{
+	private:
+		union
+		{
+			u32 raw_value;
+		} m_data;
+	public:
+		decoded_type(u32 raw_value) { m_data.raw_value = raw_value; }
+
+		u32 context_dma_notify() const
+		{
+			return m_data.raw_value;
+		}
+	};
+
+	static std::string dump(decoded_type &&decoded_values)
+	{
+		return fmt::format("NOTIFY: context DMA = 0x%x, index=%d", decoded_values.context_dma_notify(), (decoded_values.context_dma_notify() & 7) ^ 7);
+	}
+};
+
+template<>
 struct registers_decoder<NV3089_IMAGE_IN_FORMAT>
 {
 	struct decoded_type
@@ -4007,21 +4184,23 @@ struct registers_decoder<NV3089_IMAGE_IN>
 	public:
 		decoded_type(u32 raw_value) { m_data.raw_value = raw_value; }
 
-		u16 x() const
+		// x and y given as 16 bit fixed point
+
+		f32 x() const
 		{
-			return m_data.x;
+			return m_data.x / 16.f;
 		}
 
-		u16 y() const
+		f32 y() const
 		{
-			return m_data.y;
+			return m_data.y / 16.f;
 		}
 	};
 
 	static std::string dump(decoded_type &&decoded_values)
 	{
-		return "NV3089: in x = " + std::to_string(decoded_values.x() / 16.f) +
-			" y = " + std::to_string(decoded_values.y() / 16.f);
+		return "NV3089: in x = " + std::to_string(decoded_values.x()) +
+			" y = " + std::to_string(decoded_values.y());
 	}
 };
 
@@ -4030,7 +4209,7 @@ struct registers_decoder<NV4097_NO_OPERATION>
 {
 	struct decoded_type
 	{
-		decoded_type(u32) {};
+		decoded_type(u32) {}
 	};
 
 	static std::string dump(u32 &&)
@@ -4044,7 +4223,7 @@ struct registers_decoder<NV4097_INVALIDATE_VERTEX_CACHE_FILE>
 {
 	struct decoded_type
 	{
-		decoded_type(u32) {};
+		decoded_type(u32) {}
 	};
 
 	static std::string dump(u32 &&)
@@ -4058,7 +4237,7 @@ struct registers_decoder<NV4097_INVALIDATE_VERTEX_FILE>
 {
 	struct decoded_type
 	{
-		decoded_type(u32) {};
+		decoded_type(u32) {}
 	};
 
 	static std::string dump(u32 &&)
@@ -4271,7 +4450,7 @@ struct transform_constant_helper
 
 		f32 constant_value() const
 		{
-			return reinterpret_cast<const f32&>(m_data.raw_value);
+			return std::bit_cast<f32>(m_data.raw_value);
 		}
 	};
 
@@ -4425,7 +4604,7 @@ struct vertex_array_helper
 		union
 		{
 			u32 raw_value;
-			bitfield_decoder_t<0, 4> type;
+			bitfield_decoder_t<0, 3> type;
 			bitfield_decoder_t<4, 4> size;
 			bitfield_decoder_t<8, 8> stride;
 			bitfield_decoder_t<16, 16> frequency;
@@ -4511,7 +4690,7 @@ struct register_vertex_printer<f32, count>
 
 	static std::string value(u32 v)
 	{
-		return std::to_string(reinterpret_cast<f32&>(v));
+		return std::to_string(std::bit_cast<f32>(v));
 	}
 };
 

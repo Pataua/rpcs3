@@ -7,6 +7,7 @@
 
 enum class patch_type
 {
+	load,
 	byte,
 	le16,
 	le32,
@@ -27,12 +28,6 @@ class patch_engine
 		patch_type type;
 		u32 offset;
 		u64 value;
-
-		template <typename T>
-		T& value_as()
-		{
-			return *reinterpret_cast<T*>(reinterpret_cast<char*>(&value));
-		}
 	};
 
 	// Database

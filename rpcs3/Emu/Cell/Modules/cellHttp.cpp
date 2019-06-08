@@ -3,7 +3,7 @@
 
 #include "cellHttp.h"
 
-logs::channel cellHttp("cellHttp");
+LOG_CHANNEL(cellHttp);
 
 s32 cellHttpAuthCacheExport()
 {
@@ -60,6 +60,12 @@ s32 cellHttpsEnd()
 }
 
 s32 cellHttpSetProxy()
+{
+	UNIMPLEMENTED_FUNC(cellHttp);
+	return CELL_OK;
+}
+
+s32 cellHttpGetCookie()
 {
 	UNIMPLEMENTED_FUNC(cellHttp);
 	return CELL_OK;
@@ -689,6 +695,36 @@ s32 cellHttpClientSetSslIdDestroyCallback()
 	return CELL_OK;
 }
 
+s32 cellHttpFlushCache()
+{
+	UNIMPLEMENTED_FUNC(cellHttp);
+	return CELL_OK;
+}
+
+s32 cellHttpEndCache()
+{
+	UNIMPLEMENTED_FUNC(cellHttp);
+	return CELL_OK;
+}
+
+s32 cellHttpInitCache()
+{
+	UNIMPLEMENTED_FUNC(cellHttp);
+	return CELL_OK;
+}
+
+s32 cellHttpGetCacheInfo()
+{
+	UNIMPLEMENTED_FUNC(cellHttp);
+	return CELL_OK;
+}
+
+s32 cellHttpGetMemoryInfo()
+{
+	UNIMPLEMENTED_FUNC(cellHttp);
+	return CELL_OK;
+}
+
 DECLARE(ppu_module_manager::cellHttp)("cellHttp", []()
 {
 	REG_FUNC(cellHttp, cellHttpAuthCacheExport);
@@ -701,6 +737,7 @@ DECLARE(ppu_module_manager::cellHttp)("cellHttp", []()
 	REG_FUNC(cellHttp, cellHttpsInit);
 	REG_FUNC(cellHttp, cellHttpsEnd);
 	REG_FUNC(cellHttp, cellHttpSetProxy);
+	REG_FUNC(cellHttp, cellHttpGetCookie);
 	REG_FUNC(cellHttp, cellHttpGetProxy);
 
 	REG_FUNC(cellHttp, cellHttpInitCookie);
@@ -819,6 +856,12 @@ DECLARE(ppu_module_manager::cellHttp)("cellHttp", []()
 	REG_FUNC(cellHttp, cellHttpClientSetSslVersion);
 	REG_FUNC(cellHttp, cellHttpClientGetSslVersion);
 	REG_FUNC(cellHttp, cellHttpClientSetSslIdDestroyCallback);
+
+	REG_FUNC(cellHttp, cellHttpFlushCache);
+	REG_FUNC(cellHttp, cellHttpEndCache);
+	REG_FUNC(cellHttp, cellHttpInitCache);
+	REG_FUNC(cellHttp, cellHttpGetCacheInfo);
+	REG_FUNC(cellHttp, cellHttpGetMemoryInfo);
 });
 
 DECLARE(ppu_module_manager::cellHttps)("cellHttps", []()

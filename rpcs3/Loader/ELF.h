@@ -2,6 +2,7 @@
 
 #include "../../Utilities/types.h"
 #include "../../Utilities/File.h"
+#include "../../Utilities/bit_set.h"
 
 enum class elf_os : u8
 {
@@ -133,6 +134,16 @@ struct elf_shdr
 	en_t<sz_t> sh_entsize;
 };
 
+// ELF loading options
+enum class elf_opt : u32
+{
+	no_programs, // Don't load phdrs, implies no_data
+	no_sections, // Don't load shdrs
+	no_data,     // Load phdrs without data
+
+	__bitset_enum_max
+};
+
 // ELF loading error
 enum class elf_error
 {
@@ -180,12 +191,12 @@ public:
 public:
 	elf_object() = default;
 
-	elf_object(const fs::file& stream, u64 offset = 0)
+	elf_object(const fs::file& stream, u64 offset = 0, bs_t<elf_opt> opts = {})
 	{
-		open(stream, offset);
+		open(stream, offset, opts);
 	}
 
-	elf_error open(const fs::file& stream, u64 offset = 0)
+	elf_error open(const fs::file& stream, u64 offset = 0, bs_t<elf_opt> opts = {})
 	{
 		// Check stream
 		if (!stream)
@@ -231,15 +242,23 @@ public:
 			return set_error(elf_error::header_version);
 
 		// Load program headers
-		std::vector<phdr_t> _phdrs(header.e_phnum);
-		stream.seek(offset + header.e_phoff);
-		if (!stream.read(_phdrs))
-			return set_error(elf_error::stream_phdrs);
+		std::vector<phdr_t> _phdrs;
 
-		shdrs.resize(header.e_shnum);
-		stream.seek(offset + header.e_shoff);
-		if (!stream.read(shdrs))
-			return set_error(elf_error::stream_shdrs);
+		if (!(opts & elf_opt::no_programs))
+		{
+			_phdrs.resize(header.e_phnum);
+			stream.seek(offset + header.e_phoff);
+			if (!stream.read(_phdrs))
+				return set_error(elf_error::stream_phdrs);
+		}
+
+		if (!(opts & elf_opt::no_sections))
+		{
+			shdrs.resize(header.e_shnum);
+			stream.seek(offset + header.e_shoff);
+			if (!stream.read(shdrs))
+				return set_error(elf_error::stream_shdrs);
+		}
 
 		progs.clear();
 		progs.reserve(_phdrs.size());
@@ -248,10 +267,14 @@ public:
 			progs.emplace_back();
 
 			static_cast<phdr_t&>(progs.back()) = hdr;
-			progs.back().bin.resize(hdr.p_filesz);
-			stream.seek(offset + hdr.p_offset);
-			if (!stream.read(progs.back().bin))
-				return set_error(elf_error::stream_data);
+
+			if (!(opts & elf_opt::no_data))
+			{
+				progs.back().bin.resize(hdr.p_filesz);
+				stream.seek(offset + hdr.p_offset);
+				if (!stream.read(progs.back().bin))
+					return set_error(elf_error::stream_data);
+			}
 		}
 
 		shdrs.shrink_to_fit();
@@ -274,18 +297,18 @@ public:
 		header.e_machine = Machine;
 		header.e_version = 1;
 		header.e_entry = this->header.e_entry;
-		header.e_phoff = SIZE_32(ehdr_t);
-		header.e_shoff = SIZE_32(ehdr_t) + SIZE_32(phdr_t) * ::size32(progs);
+		header.e_phoff = u32{sizeof(ehdr_t)};
+		header.e_shoff = u32{sizeof(ehdr_t)} + u32{sizeof(phdr_t)} * ::size32(progs);
 		header.e_flags = this->header.e_flags;
-		header.e_ehsize = SIZE_32(ehdr_t);
-		header.e_phentsize = SIZE_32(phdr_t);
+		header.e_ehsize = u32{sizeof(ehdr_t)};
+		header.e_phentsize = u32{sizeof(phdr_t)};
 		header.e_phnum = ::size32(progs);
-		header.e_shentsize = SIZE_32(shdr_t);
+		header.e_shentsize = u32{sizeof(shdr_t)};
 		header.e_shnum = ::size32(shdrs);
 		header.e_shstrndx = this->header.e_shstrndx;
 		stream.write(header);
 
-		sz_t off = header.e_shoff + SIZE_32(shdr_t) * ::size32(shdrs);
+		sz_t off = header.e_shoff + u32{sizeof(shdr_t)} * ::size32(shdrs);
 
 		for (phdr_t phdr : progs)
 		{

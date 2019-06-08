@@ -1,6 +1,6 @@
-#pragma once
+﻿#pragma once
 
-namespace vm { using namespace ps3; }
+
 
 using spu_printf_cb_t = vm::ptr<s32(u32 arg)>;
 
@@ -42,6 +42,19 @@ struct sys_lwmutex_locker
 	}
 };
 
+enum
+{
+	SYS_CRASH_DUMP_MAX_LABEL_SIZE = 16,
+	SYS_CRASH_DUMP_MAX_LOG_AREA   = 127 // not actually defined in CELL
+};
+
+struct sys_crash_dump_log_area_info_t
+{
+	char label[SYS_CRASH_DUMP_MAX_LABEL_SIZE]; // 15 + 1 (0 terminated)
+	vm::ptr<void> addr;
+	be_t<u64> size;
+};
+
 struct sys_lwcond_t;
 struct sys_lwcond_attribute_t;
 
@@ -52,4 +65,9 @@ error_code sys_lwcond_signal_all(ppu_thread& CPU, vm::ptr<sys_lwcond_t> lwcond);
 error_code sys_lwcond_signal_to(ppu_thread& CPU, vm::ptr<sys_lwcond_t> lwcond, u32 ppu_thread_id);
 error_code sys_lwcond_wait(ppu_thread& CPU, vm::ptr<sys_lwcond_t> lwcond, u64 timeout);
 
+error_code sys_ppu_thread_create(ppu_thread& ppu, vm::ptr<u64> thread_id, u32 entry, u64 arg, s32 prio, u32 stacksize, u64 flags, vm::cptr<char> threadname);
+error_code sys_interrupt_thread_disestablish(ppu_thread& ppu, u32 ih);
+
 void sys_ppu_thread_exit(ppu_thread& CPU, u64 val);
+void sys_game_process_exitspawn(ppu_thread& ppu, vm::cptr<char> path, vm::cpptr<char> argv, vm::cpptr<char> envp, u32 data, u32 data_size, s32 prio, u64 flags);
+void sys_game_process_exitspawn2(ppu_thread& ppu, vm::cptr<char> path, vm::cpptr<char> argv, vm::cpptr<char> envp, u32 data, u32 data_size, s32 prio, u64 flags);

@@ -1,6 +1,6 @@
-#pragma once
+﻿#pragma once
 
-namespace vm { using namespace ps3; }
+
 
 // Error Codes
 enum
@@ -39,7 +39,7 @@ enum CellVdecDecodeMode : s32
 };
 
 // Output Picture Format Type
-enum CellVdecPicFormatType : s32
+enum CellVdecPicFormatType : u32
 {
 	CELL_VDEC_PICFMT_ARGB32_ILV,
 	CELL_VDEC_PICFMT_RGBA32_ILV,
@@ -48,7 +48,7 @@ enum CellVdecPicFormatType : s32
 };
 
 // Output Color Matrix Coef
-enum CellVdecColorMatrixType : s32
+enum CellVdecColorMatrixType : u32
 {
 	CELL_VDEC_COLOR_MATRIX_TYPE_BT601,
 	CELL_VDEC_COLOR_MATRIX_TYPE_BT709,
@@ -129,7 +129,7 @@ struct CellVdecResourceEx
 };
 
 // Access Unit Information
-struct CellVdecAuInfo 
+struct CellVdecAuInfo
 {
 	be_t<u32> startAddr;
 	be_t<u32> size;
@@ -157,15 +157,15 @@ struct CellVdecPicItem
 // Output Picture Format
 struct CellVdecPicFormat
 {
-	be_t<s32> formatType; // CellVdecPicFormatType
-	be_t<s32> colorMatrixType; // CellVdecColorMatrixType
+	be_t<u32> formatType; // CellVdecPicFormatType
+	be_t<u32> colorMatrixType; // CellVdecColorMatrixType
 	u8 alpha;
 };
 
 struct CellVdecPicFormat2
 {
-	be_t<s32> formatType; // CellVdecPicFormatType
-	be_t<s32> colorMatrixType; // CellVdecColorMatrixType
+	be_t<u32> formatType; // CellVdecPicFormatType
+	be_t<u32> colorMatrixType; // CellVdecColorMatrixType
 	be_t<u32> unk0;
 	u8 alpha;
 	be_t<u32> unk1;

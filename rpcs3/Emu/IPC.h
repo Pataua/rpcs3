@@ -21,12 +21,14 @@ public:
 	template <typename F>
 	static bool add(const K& ipc_key, F&& provider, std::shared_ptr<T>* out = nullptr)
 	{
-		writer_lock lock(g_ipc.m_mutex);
+		std::lock_guard lock(g_ipc.m_mutex);
 
 		// Get object location
 		std::weak_ptr<T>& wptr = g_ipc.m_map[ipc_key];
 
-		if ((out && !(*out = wptr.lock())) || wptr.expired())
+		std::shared_ptr<T> old;
+
+		if ((out && !(old = wptr.lock())) || wptr.expired())
 		{
 			// Call a function which must return the object
 			if (out)
@@ -42,13 +44,18 @@ public:
 			return true;
 		}
 
+		if (out)
+		{
+			*out = std::move(old);
+		}
+
 		return false;
 	}
 
 	// Unregister specified ipc_key, may return true even if the object doesn't exist anymore
 	static bool remove(const K& ipc_key)
 	{
-		writer_lock lock(g_ipc.m_mutex);
+		std::lock_guard lock(g_ipc.m_mutex);
 
 		return g_ipc.m_map.erase(ipc_key) != 0;
 	}
@@ -56,7 +63,7 @@ public:
 	// Unregister specified ipc_key, return the object
 	static std::shared_ptr<T> withdraw(const K& ipc_key)
 	{
-		writer_lock lock(g_ipc.m_mutex);
+		std::lock_guard lock(g_ipc.m_mutex);
 
 		const auto found = g_ipc.m_map.find(ipc_key);
 

@@ -1,13 +1,14 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "Emu/System.h"
 
 #include "VKVertexProgram.h"
 #include "VKCommonDecompiler.h"
 #include "VKHelpers.h"
+#include "../Common/GLSLCommon.h"
 
 std::string VKVertexDecompilerThread::getFloatTypeName(size_t elementCount)
 {
-	return vk::getFloatTypeNameImpl(elementCount);
+	return glsl::getFloatTypeNameImpl(elementCount);
 }
 
 std::string VKVertexDecompilerThread::getIntTypeName(size_t elementCount)
@@ -15,107 +16,87 @@ std::string VKVertexDecompilerThread::getIntTypeName(size_t elementCount)
 	return "ivec4";
 }
 
-
 std::string VKVertexDecompilerThread::getFunction(FUNCTION f)
 {
-	return vk::getFunctionImpl(f);
+	return glsl::getFunctionImpl(f);
 }
 
-std::string VKVertexDecompilerThread::compareFunction(COMPARE f, const std::string &Op0, const std::string &Op1)
+std::string VKVertexDecompilerThread::compareFunction(COMPARE f, const std::string &Op0, const std::string &Op1, bool scalar)
 {
-	return vk::compareFunctionImpl(f, Op0, Op1);
+	return glsl::compareFunctionImpl(f, Op0, Op1, scalar);
 }
 
 void VKVertexDecompilerThread::insertHeader(std::stringstream &OS)
 {
 	OS << "#version 450\n\n";
-	OS << "#extension GL_ARB_separate_shader_objects : enable\n";
-	OS << "layout(std140, set = 0, binding = 0) uniform ScaleOffsetBuffer\n";
+	OS << "#extension GL_ARB_separate_shader_objects : enable\n\n";
+
+	OS << "layout(std140, set = 0, binding = 0) uniform VertexContextBuffer\n";
 	OS << "{\n";
-	OS << "	mat4 scaleOffsetMat;\n";
-	OS << "	ivec4 userClipEnabled[2];\n";
-	OS << "	vec4 userClipFactor[2];\n";
-	OS << "};\n";
+	OS << "	mat4 scale_offset_mat;\n";
+	OS << "	ivec4 user_clip_enabled[2];\n";
+	OS << "	vec4 user_clip_factor[2];\n";
+	OS << "	uint transform_branch_bits;\n";
+	OS << "	float point_size;\n";
+	OS << "	float z_near;\n";
+	OS << "	float z_far;\n";
+	OS << "};\n\n";
+
+	OS << "layout(std140, set = 0, binding = 1) uniform VertexLayoutBuffer\n";
+	OS << "{\n";
+	OS << "	uint  vertex_base_index;\n";
+	OS << " uint  vertex_index_offset;\n";
+	OS << "	uvec4 input_attributes_blob[16 / 2];\n";
+	OS << "};\n\n";
 
 	vk::glsl::program_input in;
-	in.location = SCALE_OFFSET_BIND_SLOT;
-	in.domain = vk::glsl::glsl_vertex_program;
-	in.name = "ScaleOffsetBuffer";
+	in.location = VERTEX_PARAMS_BIND_SLOT;
+	in.domain = glsl::glsl_vertex_program;
+	in.name = "VertexContextBuffer";
 	in.type = vk::glsl::input_type_uniform_buffer;
+	inputs.push_back(in);
 
+	in.location = VERTEX_LAYOUT_BIND_SLOT;
+	in.name = "VertexLayoutBuffer";
 	inputs.push_back(in);
 }
 
 void VKVertexDecompilerThread::insertInputs(std::stringstream & OS, const std::vector<ParamType>& inputs)
 {
-	std::vector<std::tuple<size_t, std::string>> input_data;
-	for (const ParamType &PT : inputs)
-	{
-		for (const ParamItem &PI : PT.items)
-		{
-			input_data.push_back(std::make_tuple(PI.location, PI.name));
-		}
-	}
+	OS << "layout(set=0, binding=6) uniform usamplerBuffer persistent_input_stream;\n";    //Data stream with persistent vertex data (cacheable)
+	OS << "layout(set=0, binding=7) uniform usamplerBuffer volatile_input_stream;\n";      //Data stream with per-draw data (registers and immediate draw data)
 
-	/**
-	 * Its is important that the locations are in the order that vertex attributes are expected.
-	 * If order is not adhered to, channels may be swapped leading to corruption
-	*/
+	vk::glsl::program_input in;
+	in.location = VERTEX_BUFFERS_FIRST_BIND_SLOT;
+	in.domain = glsl::glsl_vertex_program;
+	in.name = "persistent_input_stream";
+	in.type = vk::glsl::input_type_texel_buffer;
+	this->inputs.push_back(in);
 
-	std::sort(input_data.begin(), input_data.end());
-
-	for (const std::tuple<size_t, std::string> item : input_data)
-	{
-		for (const ParamType &PT : inputs)
-		{
-			for (const ParamItem &PI : PT.items)
-			{
-				if (PI.name == std::get<1>(item))
-				{
-					vk::glsl::program_input in;
-					in.location = (int)std::get<0>(item) + VERTEX_BUFFERS_FIRST_BIND_SLOT;
-					in.domain = vk::glsl::glsl_vertex_program;
-					in.name = PI.name + "_buffer";
-					in.type = vk::glsl::input_type_texel_buffer;
-
-					this->inputs.push_back(in);
-					
-					bool is_int = false;
-					for (auto &attrib : rsx_vertex_program.rsx_vertex_inputs)
-					{
-						if (attrib.location == std::get<0>(item))
-						{
-							if (attrib.int_type) is_int = true;
-							break;
-						}
-					}
-
-					std::string samplerType = is_int ? "isamplerBuffer" : "samplerBuffer";
-					OS << "layout(set = 0, binding=" << in.location << ")" << "	uniform " << samplerType << " " << PI.name << "_buffer;\n";
-				}
-			}
-		}
-	}
+	in.location = VERTEX_BUFFERS_FIRST_BIND_SLOT + 1;
+	in.domain = glsl::glsl_vertex_program;
+	in.name = "volatile_input_stream";
+	in.type = vk::glsl::input_type_texel_buffer;
+	this->inputs.push_back(in);
 }
 
 void VKVertexDecompilerThread::insertConstants(std::stringstream & OS, const std::vector<ParamType> & constants)
 {
-	OS << "layout(std140, set=0, binding = 1) uniform VertexConstantsBuffer\n";
+	OS << "layout(std140, set=0, binding = 2) uniform VertexConstantsBuffer\n";
 	OS << "{\n";
 	OS << "	vec4 vc[468];\n";
-	OS << "	uint transform_branch_bits;\n";
 	OS << "};\n\n";
 
 	vk::glsl::program_input in;
 	in.location = VERTEX_CONSTANT_BUFFERS_BIND_SLOT;
-	in.domain = vk::glsl::glsl_vertex_program;
+	in.domain = glsl::glsl_vertex_program;
 	in.name = "VertexConstantsBuffer";
 	in.type = vk::glsl::input_type_uniform_buffer;
 
 	inputs.push_back(in);
 
 
-	int location = VERTEX_TEXTURES_FIRST_BIND_SLOT;
+	u32 location = VERTEX_TEXTURES_FIRST_BIND_SLOT;
 	for (const ParamType &PT : constants)
 	{
 		for (const ParamItem &PI : PT.items)
@@ -150,13 +131,13 @@ static const vertex_reg_info reg_table[] =
 	{ "front_spec_color", true, "dst_reg4", "", false },
 	{ "fog_c", true, "dst_reg5", ".xxxx", true, "", "", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_FOG },
 	//Warning: With spir-v if you declare clip distance var, you must assign a value even when its disabled! Runtime does not assign a default value
-	{ "gl_ClipDistance[0]", false, "dst_reg5", ".y * userClipFactor[0].x", false, "userClipEnabled[0].x > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC0 },
-	{ "gl_ClipDistance[1]", false, "dst_reg5", ".z * userClipFactor[0].y", false, "userClipEnabled[0].y > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC1 },
-	{ "gl_ClipDistance[2]", false, "dst_reg5", ".w * userClipFactor[0].z", false, "userClipEnabled[0].z > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC2 },
+	{ "gl_ClipDistance[0]", false, "dst_reg5", ".y * user_clip_factor[0].x", false, "user_clip_enabled[0].x > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC0 },
+	{ "gl_ClipDistance[1]", false, "dst_reg5", ".z * user_clip_factor[0].y", false, "user_clip_enabled[0].y > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC1 },
+	{ "gl_ClipDistance[2]", false, "dst_reg5", ".w * user_clip_factor[0].z", false, "user_clip_enabled[0].z > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC2 },
 	{ "gl_PointSize", false, "dst_reg6", ".x", false },
-	{ "gl_ClipDistance[3]", false, "dst_reg6", ".y * userClipFactor[0].w", false, "userClipEnabled[0].w > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC3 },
-	{ "gl_ClipDistance[4]", false, "dst_reg6", ".z * userClipFactor[1].x", false, "userClipEnabled[1].x > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC4 },
-	{ "gl_ClipDistance[5]", false, "dst_reg6", ".w * userClipFactor[1].y", false, "userClipEnabled[1].y > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC5 },
+	{ "gl_ClipDistance[3]", false, "dst_reg6", ".y * user_clip_factor[0].w", false, "user_clip_enabled[0].w > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC3 },
+	{ "gl_ClipDistance[4]", false, "dst_reg6", ".z * user_clip_factor[1].x", false, "user_clip_enabled[1].x > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC4 },
+	{ "gl_ClipDistance[5]", false, "dst_reg6", ".w * user_clip_factor[1].y", false, "user_clip_enabled[1].y > 0", "0.5", "", true, CELL_GCM_ATTRIB_OUTPUT_MASK_UC5 },
 	{ "tc0", true, "dst_reg7", "", false, "", "", "", false, CELL_GCM_ATTRIB_OUTPUT_MASK_TEX0 },
 	{ "tc1", true, "dst_reg8", "", false, "", "", "", false, CELL_GCM_ATTRIB_OUTPUT_MASK_TEX1 },
 	{ "tc2", true, "dst_reg9", "", false, "", "", "", false, CELL_GCM_ATTRIB_OUTPUT_MASK_TEX2 },
@@ -179,7 +160,7 @@ void VKVertexDecompilerThread::insertOutputs(std::stringstream & OS, const std::
 
 	for (auto &i : reg_table)
 	{
-		if (m_parr.HasParam(PF_PARAM_NONE, "vec4", i.src_reg) && i.need_declare)
+		if (m_parr.HasParam(PF_PARAM_OUT, "vec4", i.src_reg) && i.need_declare)
 		{
 			if (i.check_mask && (rsx_vertex_program.output_mask & i.check_mask_value) == 0)
 				continue;
@@ -212,50 +193,26 @@ void VKVertexDecompilerThread::insertOutputs(std::stringstream & OS, const std::
 		OS << "layout(location=" << vk::get_varying_register("front_spec_color").reg_location << ") out vec4 front_spec_color;\n";
 }
 
-namespace vk
-{
-	void add_input(std::stringstream & OS, const ParamItem &PI, const std::vector<rsx_vertex_input> &inputs)
-	{
-		for (const auto &real_input : inputs)
-		{
-			if (real_input.location != PI.location)
-				continue;
-
-			if (!real_input.is_array)
-			{
-				OS << "	vec4 " << PI.name << " = vec4(texelFetch(" << PI.name << "_buffer, 0));\n";
-				return;
-			}
-
-			if (real_input.frequency > 1)
-			{
-				if (real_input.is_modulo)
-				{
-					OS << "	vec4 " << PI.name << "= vec4(texelFetch(" << PI.name << "_buffer, gl_VertexIndex %" << real_input.frequency << "));\n";
-					return;
-				}
-
-				OS << "	vec4 " << PI.name << "= vec4(texelFetch(" << PI.name << "_buffer, gl_VertexIndex /" << real_input.frequency << "));\n";
-				return;
-			}
-
-			OS << "	vec4 " << PI.name << "= vec4(texelFetch(" << PI.name << "_buffer, gl_VertexIndex).rgba);\n";
-			return;
-		}
-
-		OS << "	vec4 " << PI.name << "= vec4(texelFetch(" << PI.name << "_buffer, gl_VertexIndex).rgba);\n";
-	}
-}
-
 void VKVertexDecompilerThread::insertMainStart(std::stringstream & OS)
 {
-	vk::insert_glsl_legacy_function(OS, vk::glsl::program_domain::glsl_vertex_program);
+	glsl::shader_properties properties2;
+	properties2.domain = glsl::glsl_vertex_program;
+	properties2.require_lit_emulation = properties.has_lit_op;
+	// Unused
+	properties2.require_depth_conversion = false;
+	properties2.require_wpos = false;
+	properties2.require_texture_ops = false;
+	properties2.emulate_shadow_compare = false;
+	properties2.low_precision_tests = false;
+
+	glsl::insert_glsl_legacy_function(OS, properties2);
+	glsl::insert_vertex_input_fetch(OS, glsl::glsl_rules_spirv);
 
 	std::string parameters = "";
 	for (int i = 0; i < 16; ++i)
 	{
 		std::string reg_name = "dst_reg" + std::to_string(i);
-		if (m_parr.HasParam(PF_PARAM_NONE, "vec4", reg_name))
+		if (m_parr.HasParam(PF_PARAM_OUT, "vec4", reg_name))
 		{
 			if (parameters.length())
 				parameters += ", ";
@@ -286,7 +243,9 @@ void VKVertexDecompilerThread::insertMainStart(std::stringstream & OS)
 	for (const ParamType &PT : m_parr.params[PF_PARAM_IN])
 	{
 		for (const ParamItem &PI : PT.items)
-			vk::add_input(OS, PI, rsx_vertex_program.rsx_vertex_inputs);
+		{
+			OS << "	vec4 " << PI.name << "= read_location(" << std::to_string(PI.location) << ");\n";
+		}
 	}
 }
 
@@ -299,7 +258,7 @@ void VKVertexDecompilerThread::insertMainEnd(std::stringstream & OS)
 
 	std::string parameters = "";
 
-	if (ParamType *vec4Types = m_parr.SearchParam(PF_PARAM_NONE, "vec4"))
+	if (ParamType *vec4Types = m_parr.SearchParam(PF_PARAM_OUT, "vec4"))
 	{
 		for (int i = 0; i < 16; ++i)
 		{
@@ -333,7 +292,7 @@ void VKVertexDecompilerThread::insertMainEnd(std::stringstream & OS)
 
 	for (auto &i : reg_table)
 	{
-		if (m_parr.HasParam(PF_PARAM_NONE, "vec4", i.src_reg))
+		if (m_parr.HasParam(PF_PARAM_OUT, "vec4", i.src_reg))
 		{
 			if (i.check_mask && (rsx_vertex_program.output_mask & i.check_mask_value) == 0)
 				continue;
@@ -366,14 +325,16 @@ void VKVertexDecompilerThread::insertMainEnd(std::stringstream & OS)
 	}
 
 	if (insert_back_diffuse && insert_front_diffuse)
-		if (m_parr.HasParam(PF_PARAM_NONE, "vec4", "dst_reg1"))
+		if (m_parr.HasParam(PF_PARAM_OUT, "vec4", "dst_reg1"))
 			OS << "	front_diff_color = dst_reg1;\n";
 
 	if (insert_back_specular && insert_front_specular)
-		if (m_parr.HasParam(PF_PARAM_NONE, "vec4", "dst_reg2"))
+		if (m_parr.HasParam(PF_PARAM_OUT, "vec4", "dst_reg2"))
 			OS << "	front_spec_color = dst_reg2;\n";
 
-	OS << "	gl_Position = gl_Position * scaleOffsetMat;\n";
+	OS << "	gl_PointSize = point_size;\n";
+	OS << "	gl_Position = gl_Position * scale_offset_mat;\n";
+	OS << "	gl_Position = apply_zclip_xform(gl_Position, z_near, z_far);\n";
 	OS << "}\n";
 }
 
@@ -395,43 +356,23 @@ VKVertexProgram::~VKVertexProgram()
 
 void VKVertexProgram::Decompile(const RSXVertexProgram& prog)
 {
-	VKVertexDecompilerThread decompiler(prog, shader, parr, *this);
+	std::string source;
+	VKVertexDecompilerThread decompiler(prog, source, parr, *this);
 	decompiler.Task();
+
+	shader.create(::glsl::program_domain::glsl_vertex_program, source);
 }
 
 void VKVertexProgram::Compile()
 {
-	fs::create_path(fs::get_config_dir() + "/shaderlog");
-	fs::file(fs::get_config_dir() + "shaderlog/VertexProgram.spirv", fs::rewrite).write(shader);
-
-	std::vector<u32> spir_v;
-	if (!vk::compile_glsl_to_spv(shader, vk::glsl::glsl_vertex_program, spir_v))
-		fmt::throw_exception("Failed to compile vertex shader" HERE);
-
-	VkShaderModuleCreateInfo vs_info;
-	vs_info.codeSize = spir_v.size() * sizeof(u32);
-	vs_info.pNext = nullptr;
-	vs_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	vs_info.pCode = (uint32_t*)spir_v.data();
-	vs_info.flags = 0;
-
-	VkDevice dev = (VkDevice)*vk::get_current_renderer();
-	vkCreateShaderModule(dev, &vs_info, nullptr, &handle);
-
-	id = (u32)((u64)handle);
+	if (g_cfg.video.log_programs)
+		fs::file(fs::get_cache_dir() + "shaderlog/VertexProgram" + std::to_string(id) + ".spirv", fs::rewrite).write(shader.get_source());
+	handle = shader.compile();
 }
 
 void VKVertexProgram::Delete()
 {
-	shader.clear();
-
-	if (handle)
-	{
-		VkDevice dev = (VkDevice)*vk::get_current_renderer();
-		vkDestroyShaderModule(dev, handle, nullptr);
-
-		handle = nullptr;
-	}
+	shader.destroy();
 }
 
 void VKVertexProgram::SetInputs(std::vector<vk::glsl::program_input>& inputs)

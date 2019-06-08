@@ -24,11 +24,15 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Emu\RSX\VK\VKCommonDecompiler.h" />
+    <ClInclude Include="Emu\RSX\VK\VKCompute.h" />
     <ClInclude Include="Emu\RSX\VK\VKFormats.h" />
     <ClInclude Include="Emu\RSX\VK\VKFragmentProgram.h" />
+    <ClInclude Include="Emu\RSX\VK\VKFramebuffer.h" />
     <ClInclude Include="Emu\RSX\VK\VKGSRender.h" />
     <ClInclude Include="Emu\RSX\VK\VKHelpers.h" />
+    <ClInclude Include="Emu\RSX\VK\VKOverlays.h" />
     <ClInclude Include="Emu\RSX\VK\VKProgramBuffer.h" />
+    <ClInclude Include="Emu\RSX\VK\VKRenderPass.h" />
     <ClInclude Include="Emu\RSX\VK\VKRenderTargets.h" />
     <ClInclude Include="Emu\RSX\VK\VKTextOut.h" />
     <ClInclude Include="Emu\RSX\VK\VKTextureCache.h" />
@@ -39,12 +43,15 @@
     <ClCompile Include="Emu\RSX\VK\VKCommonDecompiler.cpp" />
     <ClCompile Include="Emu\RSX\VK\VKFormats.cpp" />
     <ClCompile Include="Emu\RSX\VK\VKFragmentProgram.cpp" />
+    <ClCompile Include="Emu\RSX\VK\VKFramebuffer.cpp" />
     <ClCompile Include="Emu\RSX\VK\VKGSRender.cpp" />
     <ClCompile Include="Emu\RSX\VK\VKHelpers.cpp" />
     <ClCompile Include="Emu\RSX\VK\VKProgramPipeline.cpp" />
+    <ClCompile Include="Emu\RSX\VK\VKRenderPass.cpp" />
     <ClCompile Include="Emu\RSX\VK\VKTexture.cpp" />
     <ClCompile Include="Emu\RSX\VK\VKVertexBuffers.cpp" />
     <ClCompile Include="Emu\RSX\VK\VKVertexProgram.cpp" />
+    <ClCompile Include="Emu\RSX\VK\VKMemAlloc.cpp" />
     <ClCompile Include="Emu\RSX\VK\VulkanAPI.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -61,7 +68,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
-    <PlatformToolset>v140</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -95,7 +102,8 @@
   <PropertyGroup />
   <ItemDefinitionGroup>
     <ClCompile>
-      <AdditionalIncludeDirectories>..\Vulkan\Vulkan-LoaderAndValidationLayers\include;..\Vulkan\glslang\glslang\Public;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(VULKAN_SDK)\Include;..\Vulkan\glslang\glslang\Public;..\Vulkan\glslang;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

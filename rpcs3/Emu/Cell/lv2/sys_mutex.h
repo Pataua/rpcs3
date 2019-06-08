@@ -31,7 +31,7 @@ struct lv2_mutex final : lv2_obj
 	const u64 name;
 	const s32 flags;
 
-	semaphore<> mutex;
+	shared_mutex mutex;
 	atomic_t<u32> owner{0}; // Owner Thread ID
 	atomic_t<u32> lock_count{0}; // Recursive Locks
 	atomic_t<u32> cond_count{0}; // Condition Variables
@@ -147,7 +147,7 @@ class ppu_thread;
 
 // Syscalls
 
-error_code sys_mutex_create(vm::ps3::ptr<u32> mutex_id, vm::ps3::ptr<sys_mutex_attribute_t> attr);
+error_code sys_mutex_create(vm::ptr<u32> mutex_id, vm::ptr<sys_mutex_attribute_t> attr);
 error_code sys_mutex_destroy(u32 mutex_id);
 error_code sys_mutex_lock(ppu_thread& ppu, u32 mutex_id, u64 timeout);
 error_code sys_mutex_trylock(ppu_thread& ppu, u32 mutex_id);

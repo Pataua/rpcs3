@@ -3,7 +3,7 @@
 #include "stdafx_d3d12.h"
 #include "D3D12FragmentProgramDecompiler.h"
 #include "D3D12CommonDecompiler.h"
-#include "Emu/Memory/Memory.h"
+#include "Emu/Memory/vm.h"
 #include "Emu/System.h"
 #include <set>
 
@@ -18,14 +18,14 @@ std::string D3D12FragmentDecompiler::getFloatTypeName(size_t elementCount)
 	return getFloatTypeNameImp(elementCount);
 }
 
+std::string D3D12FragmentDecompiler::getHalfTypeName(size_t elementCount)
+{
+	return getFloatTypeNameImp(elementCount);
+}
+
 std::string D3D12FragmentDecompiler::getFunction(enum class FUNCTION f)
 {
 	return getFunctionImp(f);
-}
-
-std::string D3D12FragmentDecompiler::saturate(const std::string & code)
-{
-	return "saturate(" + code + ")";
 }
 
 std::string D3D12FragmentDecompiler::compareFunction(COMPARE f, const std::string &Op0, const std::string &Op1)
@@ -35,6 +35,9 @@ std::string D3D12FragmentDecompiler::compareFunction(COMPARE f, const std::strin
 
 void D3D12FragmentDecompiler::insertHeader(std::stringstream & OS)
 {
+	OS << "#define floatBitsToUint asuint\n";
+	OS << "#define uintBitsToFloat asfloat\n\n";
+
 	OS << "cbuffer SCALE_OFFSET : register(b0)\n";
 	OS << "{\n";
 	OS << "	float4x4 scaleOffsetMat;\n";
@@ -42,13 +45,17 @@ void D3D12FragmentDecompiler::insertHeader(std::stringstream & OS)
 	OS << "	float4 userClipFactor[2];\n";
 	OS << "	float fog_param0;\n";
 	OS << "	float fog_param1;\n";
-	OS << "	int isAlphaTested;\n";
-	OS << "	float alphaRef;\n";
+	OS << "	uint alpha_test;\n";
+	OS << "	float alpha_ref;\n";
+	OS << "	uint alpha_func;\n";
+	OS << "	uint fog_mode;\n";
+	OS << "	float wpos_scale;\n";
+	OS << "	float wpos_bias;\n";
 	OS << "	float4 texture_parameters[16];\n";
 	OS << "};\n";
 }
 
-void D3D12FragmentDecompiler::insertIntputs(std::stringstream & OS)
+void D3D12FragmentDecompiler::insertInputs(std::stringstream & OS)
 {
 	OS << "struct PixelInput\n";
 	OS << "{\n";
@@ -85,7 +92,7 @@ void D3D12FragmentDecompiler::insertOutputs(std::stringstream & OS)
 		{ "ocol3", m_ctrl & CELL_GCM_SHADER_CONTROL_32_BITS_EXPORTS ? "r4" : "h8" },
 	};
 	size_t idx = 0;
-	for (int i = 0; i < sizeof(table) / sizeof(*table); ++i)
+	for (int i = 0; i < std::size(table); ++i)
 	{
 		if (m_parr.HasParam(PF_PARAM_NONE, "float4", table[i].second))
 			OS << "	" << "float4" << " " << table[i].first << " : SV_TARGET" << idx++ << ";\n";
@@ -151,38 +158,6 @@ void D3D12FragmentDecompiler::insertConstants(std::stringstream & OS)
 
 namespace
 {
-	// Note: It's not clear whether fog is computed per pixel or per vertex.
-	// But it makes more sense to compute exp of interpoled value than to interpolate exp values.
-	void insert_fog_declaration(std::stringstream & OS, rsx::fog_mode mode)
-	{
-		switch (mode)
-		{
-		case rsx::fog_mode::linear:
-			OS << "	float4 fogc = float4(fog_param1 * In.fogc.x + (fog_param0 - 1.), fog_param1 * In.fogc.x + (fog_param0 - 1.), 0., 0.);\n";
-			break;
-		case rsx::fog_mode::exponential:
-			OS << "	float4 fogc = float4(11.084 * (fog_param1 * In.fogc.x + fog_param0 - 1.5), exp(11.084 * (fog_param1 * In.fogc.x + fog_param0 - 1.5)), 0., 0.);\n";
-			break;
-		case rsx::fog_mode::exponential2:
-			OS << "	float4 fogc = float4(4.709 * (fog_param1 * In.fogc.x + fog_param0 - 1.5), exp(-pow(4.709 * (fog_param1 * In.fogc.x + fog_param0 - 1.5), 2.)), 0., 0.);\n";
-			break;
-		case rsx::fog_mode::linear_abs:
-			OS << "	float4 fogc = float4(fog_param1 * abs(In.fogc.x) + (fog_param0 - 1.), fog_param1 * abs(In.fogc.x) + (fog_param0 - 1.), 0., 0.);\n";
-			break;
-		case rsx::fog_mode::exponential_abs:
-			OS << "	float4 fogc = float4(11.084 * (fog_param1 * abs(In.fogc.x) + fog_param0 - 1.5), exp(11.084 * (fog_param1 * abs(In.fogc.x) + fog_param0 - 1.5)), 0., 0.);\n";
-			break;
-		case rsx::fog_mode::exponential2_abs:
-			OS << "	float4 fogc = float4(4.709 * (fog_param1 * abs(In.fogc.x) + fog_param0 - 1.5), exp(-pow(4.709 * (fog_param1 * abs(In.fogc.x) + fog_param0 - 1.5), 2.)), 0., 0.);\n";
-			break;
-		default:
-			OS << "	float4 fogc = float4(0., 0., 0., 0.);\n";
-			return;
-		}
-
-		OS << "	fogc.y = saturate(fogc.y);\n";
-	}
-	
 	std::string insert_texture_fetch(const RSXFragmentProgram& prog, int index)
 	{
 		std::string tex_name = "tex" + std::to_string(index) + ".Sample";
@@ -201,9 +176,24 @@ namespace
 	}
 }
 
-void D3D12FragmentDecompiler::insertMainStart(std::stringstream & OS)
+void D3D12FragmentDecompiler::insertGlobalFunctions(std::stringstream &OS)
 {
 	insert_d3d12_legacy_function(OS, true);
+}
+
+void D3D12FragmentDecompiler::insertMainStart(std::stringstream & OS)
+{
+	for (const ParamType &PT : m_parr.params[PF_PARAM_IN])
+	{
+		for (const ParamItem &PI : PT.items)
+		{
+			if (PI.name == "fogc")
+			{
+				program_common::insert_fog_declaration(OS, "float4", "fogc", true);
+				break;
+			}
+		}
+	}
 
 	const std::set<std::string> output_value =
 	{
@@ -231,7 +221,7 @@ void D3D12FragmentDecompiler::insertMainStart(std::stringstream & OS)
 			}
 			if (PI.name == "fogc")
 			{
-				insert_fog_declaration(OS, m_prog.fog_equation);
+				OS << "	float4 fogc = fetch_fog_value(fog_mode, In.fogc);\n";
 				continue;
 			}
 			if (PI.name == "ssa")
@@ -239,10 +229,11 @@ void D3D12FragmentDecompiler::insertMainStart(std::stringstream & OS)
 			OS << "	" << PT.type << " " << PI.name << " = In." << PI.name << ";\n";
 		}
 	}
-	// A bit unclean, but works.
-	OS << "	" << "float4 wpos = In.Position;\n";
-	if (m_prog.origin_mode == rsx::window_origin::bottom)
-		OS << "	wpos.y = (" << std::to_string(m_prog.height) << " - wpos.y);\n";
+
+	//NOTE: Framebuffer scaling not actually supported. wpos_scale is used to reconstruct the true window height
+	OS << "	float4 wpos = In.Position;\n";
+	OS << " float4 res_scale = abs(1.f / wpos_scale);\n";
+	OS << "	if (wpos_scale < 0) wpos.y = (wpos_bias * res_scale) - wpos.y;\n";
 	OS << "	float4 ssa = is_front_face ? float4(1., 1., 1., 1.) : float4(-1., -1., -1., -1.);\n";
 
 	// Declare output
@@ -303,7 +294,7 @@ void D3D12FragmentDecompiler::insertMainEnd(std::stringstream & OS)
 
 	std::string first_output_name;
 	OS << "	PixelOutput Out = (PixelOutput)0;\n";
-	for (int i = 0; i < sizeof(table) / sizeof(*table); ++i)
+	for (int i = 0; i < std::size(table); ++i)
 	{
 		if (m_parr.HasParam(PF_PARAM_NONE, "float4", table[i].second))
 		{
@@ -315,12 +306,8 @@ void D3D12FragmentDecompiler::insertMainEnd(std::stringstream & OS)
 	{
 		if (m_parr.HasParam(PF_PARAM_NONE, "vec4", "r1"))
 		{
-			/**
-			 * Note: Naruto Shippuden : Ultimate Ninja Storm 2 sets CELL_GCM_SHADER_CONTROL_32_BITS_EXPORTS in a shader
-			 * but it writes depth in r1.z and not h2.z.
-			 * Maybe there's a different flag for depth ?
-			 */
-			 //		OS << "	Out.depth = " << ((m_ctrl & CELL_GCM_SHADER_CONTROL_32_BITS_EXPORTS) ? "r1.z;" : "h2.z;") << "\n";
+			//Depth writes are always from a fp32 register. See issues section on nvidia's NV_fragment_program spec
+			//https://www.khronos.org/registry/OpenGL/extensions/NV/NV_fragment_program.txt
 			OS << "	Out.depth = r1.z;\n";
 		}
 		else
@@ -363,7 +350,7 @@ void D3D12FragmentDecompiler::insertMainEnd(std::stringstream & OS)
 			}
 		}
 
-		OS << make_comparison_test(m_prog.alpha_func, "isAlphaTested && ", "Out." + first_output_name + ".a", "alphaRef");
+		OS << "	if ((alpha_test & 0x11) != 0 && !comparison_passes(Out." << first_output_name << ".a, alpha_ref, alpha_func)) discard;\n";
 		
 	}
 	OS << "	return Out;\n";

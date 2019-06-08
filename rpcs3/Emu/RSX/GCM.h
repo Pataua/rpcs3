@@ -24,14 +24,14 @@ struct CellGcmConfig
 
 struct CellGcmContextData;
 
-typedef s32(CellGcmContextCallback)(vm::ps3::ptr<CellGcmContextData>, u32);
+typedef s32(CellGcmContextCallback)(vm::ptr<CellGcmContextData>, u32);
 
 struct CellGcmContextData
 {
-	vm::ps3::bptr<u32> begin;
-	vm::ps3::bptr<u32> end;
-	vm::ps3::bptr<u32> current;
-	vm::ps3::bptr<CellGcmContextCallback> callback;
+	vm::bptr<u32> begin;
+	vm::bptr<u32> end;
+	vm::bptr<u32> current;
+	vm::bptr<CellGcmContextCallback> callback;
 };
 
 struct gcmInfo
@@ -73,12 +73,12 @@ struct CellGcmReportData
 
 struct CellGcmZcullInfo
 {
-	u32 region;
-	u32 size;
-	u32 start;
-	u32 offset;
-	u32 status0;
-	u32 status1;
+	be_t<u32> region;
+	be_t<u32> size;
+	be_t<u32> start;
+	be_t<u32> offset;
+	be_t<u32> status0;
+	be_t<u32> status1;
 };
 
 struct CellGcmDisplayInfo
@@ -173,7 +173,7 @@ namespace rsx
 			*dst++ = cmd.as<u32>();
 		}
 
-		return SIZE_32(u32) * (static_cast<u32>(values.size()) + 1);
+		return u32{sizeof(u32)} * (static_cast<u32>(values.size()) + 1);
 	}
 
 	template<typename AT>
@@ -181,6 +181,6 @@ namespace rsx
 	{
 		*dst++ = RSX_METHOD_OLD_JUMP_CMD | offset;
 
-		return SIZE_32(u32);
+		return sizeof(u32);
 	}
 }

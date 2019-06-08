@@ -54,7 +54,7 @@ s32 sys_mempool_create(ppu_thread& ppu, vm::ptr<sys_mempool_t> mempool, vm::ptr<
 	}
 
 	// Test chunk address aligment
-	if (chunk % 8)
+	if (!chunk.aligned(8))
 	{
 		return CELL_EINVAL;
 	}
@@ -184,7 +184,7 @@ vm::ptr<void> sys_mempool_allocate_block(ppu_thread& ppu, sys_mempool_t mempool)
 	}
 	sys_mutex_lock(ppu, memory_pool->mutexid, 0);
 
-	while (memory_pool->free_blocks.size() == 0) // while is to guard against spurious wakeups
+	while (memory_pool->free_blocks.empty()) // while is to guard against spurious wakeups
 	{
 		sys_cond_wait(ppu, memory_pool->condid, 0);
 		memory_pool = idm::get<memory_pool_t>(mempool);
@@ -206,7 +206,7 @@ vm::ptr<void> sys_mempool_try_allocate_block(ppu_thread& ppu, sys_mempool_t memp
 
 	auto memory_pool = idm::get<memory_pool_t>(mempool);
 
-	if (!memory_pool || memory_pool->free_blocks.size() == 0)
+	if (!memory_pool || memory_pool->free_blocks.empty())
 	{
 		return vm::null;
 	}

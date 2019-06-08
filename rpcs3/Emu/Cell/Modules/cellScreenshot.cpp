@@ -4,9 +4,9 @@
 
 #include "cellScreenshot.h"
 
-namespace vm { using namespace ps3; }
 
-logs::channel cellScreenshot("cellScreenshot");
+
+LOG_CHANNEL(cellScreenshot);
 
 s32 cellScreenShotSetParameter(vm::cptr<CellScreenShotSetParam> param)
 {

@@ -1,21 +1,51 @@
 #include "gui_settings.h"
 
 #include "game_list_frame.h"
+#include "qt_utils.h"
 
 #include <QCoreApplication>
-#include <QDir>
 #include <QMessageBox>
 
-inline std::string sstr(const QString& _in) { return _in.toUtf8().toStdString(); }
+inline std::string sstr(const QString& _in) { return _in.toStdString(); }
 
-gui_settings::gui_settings(QObject* parent) : QObject(parent), settings(ComputeSettingsDir() + tr("CurrentSettings") + ".ini", QSettings::Format::IniFormat, parent),
-	settingsDir(ComputeSettingsDir())
+gui_settings::gui_settings(QObject* parent) : QObject(parent)
+	, m_current_name(gui::Settings)
+	, m_settings(ComputeSettingsDir() + gui::Settings + ".ini", QSettings::Format::IniFormat, parent)
+	, m_settingsDir(ComputeSettingsDir())
 {
+	const QString settings_name = GetValue(gui::m_currentConfig).toString();
+
+	if (settings_name != m_current_name)
+	{
+		ChangeToConfig(settings_name);
+	}
 }
 
 gui_settings::~gui_settings()
 {
-	settings.sync();
+	m_settings.sync();
+}
+
+QString gui_settings::GetCurrentUser()
+{
+	// load user
+	bool is_valid_user;
+	const QString user = GetValue(gui::um_active_user).toString();
+	const u32 user_id = user.toInt(&is_valid_user);
+
+	// set user if valid
+	if (is_valid_user && user_id > 0)
+	{
+		return user;
+	}
+
+	LOG_FATAL(GENERAL, "Could not parse user setting: '%s' = '%d'.", user.toStdString(), user_id);
+	return QString();
+}
+
+QString gui_settings::GetSettingsDir()
+{
+	return m_settingsDir.absolutePath();
 }
 
 QString gui_settings::ComputeSettingsDir()
@@ -23,40 +53,77 @@ QString gui_settings::ComputeSettingsDir()
 	return QString::fromStdString(fs::get_config_dir()) + "/GuiConfigs/";
 }
 
-void gui_settings::ChangeToConfig(const QString& name)
+bool gui_settings::ChangeToConfig(const QString& friendly_name)
 {
-	if (name != tr("CurrentSettings"))
-	{ // don't try to change to yourself.
-		Reset(false);
-
-		QSettings other(settingsDir.absoluteFilePath(name + ".ini"), QSettings::IniFormat);
-
-		QStringList keys = other.allKeys();
-		for (QStringList::iterator i = keys.begin(); i != keys.end(); i++)
-		{
-			settings.setValue(*i, other.value(*i));
-		}
-		settings.sync();
+	if (m_current_name == friendly_name)
+	{
+		return false;
 	}
+
+	if (friendly_name != gui::Settings)
+	{
+		if (m_current_name == gui::Settings)
+		{
+			SetValue(gui::m_currentConfig, friendly_name);
+		}
+		else
+		{
+			QSettings tmp(m_settingsDir.absoluteFilePath(gui::Settings + ".ini"), QSettings::Format::IniFormat, parent());
+			tmp.beginGroup(gui::m_currentConfig.key);
+			tmp.setValue(gui::m_currentConfig.name, friendly_name);
+			tmp.endGroup();
+		}
+	}
+
+	m_settings.sync();
+
+	Reset(true);
+
+	QSettings other(m_settingsDir.absoluteFilePath(friendly_name + ".ini"), QSettings::IniFormat);
+
+	for (const QString& key : other.allKeys())
+	{
+		m_settings.setValue(key, other.value(key));
+	}
+
+	SetValue(gui::m_currentConfig, friendly_name);
+
+	m_settings.sync();
+
+	m_current_name = friendly_name;
+
+	return true;
 }
 
 void gui_settings::Reset(bool removeMeta)
 {
 	if (removeMeta)
 	{
-		settings.clear();
+		m_settings.clear();
 	}
 	else
 	{
-		settings.remove(GUI::logger);
-		settings.remove(GUI::main_window);
-		settings.remove(GUI::game_list);
+		m_settings.remove(gui::logger);
+		m_settings.remove(gui::main_window);
+		m_settings.remove(gui::game_list);
 	}
 }
 
-QVariant gui_settings::GetValue(const GUI_SAVE& entry)
+void gui_settings::RemoveValue(const QString& key, const QString& name)
 {
-	return settings.value(entry.key + "/" + entry.name, entry.def);
+	m_settings.beginGroup(key);
+	m_settings.remove(name);
+	m_settings.endGroup();
+}
+
+QVariant gui_settings::GetValue(const gui_save& entry)
+{
+	return m_settings.value(entry.key + "/" + entry.name, entry.def);
+}
+
+QVariant gui_settings::GetValue(const QString& key, const QString& name, const QString& def)
+{
+	return m_settings.value(key + "/" + name, def);
 }
 
 QVariant gui_settings::List2Var(const q_pair_list& list)
@@ -76,65 +143,28 @@ q_pair_list gui_settings::Var2List(const QVariant& var)
 	return list;
 }
 
-QIcon gui_settings::colorizedIcon(const QIcon& icon, const QColor& oldColor, const QColor& newColor, bool useSpecialMasks)
+void gui_settings::SetValue(const gui_save& entry, const QVariant& value)
 {
-	QPixmap pixmap = icon.pixmap(icon.availableSizes().at(0));
-	QBitmap mask = pixmap.createMaskFromColor(oldColor, Qt::MaskOutColor);
-	pixmap.fill(newColor);
-	pixmap.setMask(mask);
-
-	// special masks for disc icon and others
-
-	if (useSpecialMasks)
-	{
-		auto saturatedColor = [](const QColor& col, float sat /* must be < 1 */)
-		{
-			int r = col.red() + sat * (255 - col.red());
-			int g = col.green() + sat * (255 - col.green());
-			int b = col.blue() + sat * (255 - col.blue());
-			return QColor(r, g, b, col.alpha());
-		};
-
-		QColor colorS1(Qt::white);
-		QPixmap pixmapS1 = icon.pixmap(icon.availableSizes().at(0));
-		QBitmap maskS1 = pixmapS1.createMaskFromColor(colorS1, Qt::MaskOutColor);
-		pixmapS1.fill(colorS1);
-		pixmapS1.setMask(maskS1);
-
-		QColor colorS2(0, 173, 246, 255);
-		QPixmap pixmapS2 = icon.pixmap(icon.availableSizes().at(0));
-		QBitmap maskS2 = pixmapS2.createMaskFromColor(colorS2, Qt::MaskOutColor);
-		pixmapS2.fill(saturatedColor(newColor, 0.6f));
-		pixmapS2.setMask(maskS2);
-
-		QColor colorS3(0, 132, 244, 255);
-		QPixmap pixmapS3 = icon.pixmap(icon.availableSizes().at(0));
-		QBitmap maskS3 = pixmapS3.createMaskFromColor(colorS3, Qt::MaskOutColor);
-		pixmapS3.fill(saturatedColor(newColor, 0.3f));
-		pixmapS3.setMask(maskS3);
-
-		QPainter painter(&pixmap);
-		painter.drawPixmap(QPoint(0, 0), pixmapS1);
-		painter.drawPixmap(QPoint(0, 0), pixmapS2);
-		painter.drawPixmap(QPoint(0, 0), pixmapS3);
-		painter.end();
-	}
-
-	return QIcon(pixmap);
+	m_settings.beginGroup(entry.key);
+	m_settings.setValue(entry.name, value);
+	m_settings.endGroup();
 }
 
-void gui_settings::SetValue(const GUI_SAVE& entry, const QVariant& value)
+void gui_settings::SetValue(const QString& key, const QString& name, const QVariant& value)
 {
-	settings.beginGroup(entry.key);
-	settings.setValue(entry.name, value);
-	settings.endGroup();
+	m_settings.beginGroup(key);
+	m_settings.setValue(name, value);
+	m_settings.endGroup();
 }
 
 QStringList gui_settings::GetGameListCategoryFilters()
 {
 	QStringList filterList;
-	if (GetCategoryVisibility(Category::Non_Disc_Game)) filterList.append(category::non_disc_games);
-	if (GetCategoryVisibility(Category::Disc_Game)) filterList.append(category::disc_Game);
+	if (GetCategoryVisibility(Category::HDD_Game)) filterList.append(category::hdd_game);
+	if (GetCategoryVisibility(Category::Disc_Game)) filterList.append(category::disc_game);
+	if (GetCategoryVisibility(Category::PS1_Game)) filterList.append(category::ps1_game);
+	if (GetCategoryVisibility(Category::PS2_Game)) filterList.append(category::ps2_games);
+	if (GetCategoryVisibility(Category::PSP_Game)) filterList.append(category::psp_games);
 	if (GetCategoryVisibility(Category::Home)) filterList.append(category::home);
 	if (GetCategoryVisibility(Category::Media)) filterList.append(category::media);
 	if (GetCategoryVisibility(Category::Data)) filterList.append(category::data);
@@ -145,24 +175,30 @@ QStringList gui_settings::GetGameListCategoryFilters()
 
 bool gui_settings::GetCategoryVisibility(int cat)
 {
-	GUI_SAVE value;
+	gui_save value;
 
 	switch (cat)
 	{
-	case Category::Non_Disc_Game:
-		value = GUI::cat_hdd_game; break;
+	case Category::HDD_Game:
+		value = gui::cat_hdd_game; break;
 	case Category::Disc_Game:
-		value = GUI::cat_disc_game; break;
+		value = gui::cat_disc_game; break;
+	case Category::PS1_Game:
+		value = gui::cat_ps1_game; break;
+	case Category::PS2_Game:
+		value = gui::cat_ps2_game; break;
+	case Category::PSP_Game:
+		value = gui::cat_psp_game; break;
 	case Category::Home:
-		value = GUI::cat_home; break;
+		value = gui::cat_home; break;
 	case Category::Media:
-		value = GUI::cat_audio_video; break;
+		value = gui::cat_audio_video; break;
 	case Category::Data:
-		value = GUI::cat_game_data; break;
+		value = gui::cat_game_data; break;
 	case Category::Unknown_Cat:
-		value = GUI::cat_unknown; break;
+		value = gui::cat_unknown; break;
 	case Category::Others:
-		value = GUI::cat_other; break;
+		value = gui::cat_other; break;
 	default:
 		LOG_WARNING(GENERAL, "GetCategoryVisibility: wrong cat <%d>", cat);
 		break;
@@ -173,24 +209,30 @@ bool gui_settings::GetCategoryVisibility(int cat)
 
 void gui_settings::SetCategoryVisibility(int cat, const bool& val)
 {
-	GUI_SAVE value;
+	gui_save value;
 
 	switch (cat)
 	{
-	case Category::Non_Disc_Game:
-		value = GUI::cat_hdd_game; break;
+	case Category::HDD_Game:
+		value = gui::cat_hdd_game; break;
 	case Category::Disc_Game:
-		value = GUI::cat_disc_game; break;
+		value = gui::cat_disc_game; break;
 	case Category::Home:
-		value = GUI::cat_home; break;
+		value = gui::cat_home; break;
+	case Category::PS1_Game:
+		value = gui::cat_ps1_game; break;
+	case Category::PS2_Game:
+		value = gui::cat_ps2_game; break;
+	case Category::PSP_Game:
+		value = gui::cat_psp_game; break;
 	case Category::Media:
-		value = GUI::cat_audio_video; break;
+		value = gui::cat_audio_video; break;
 	case Category::Data:
-		value = GUI::cat_game_data; break;
+		value = gui::cat_game_data; break;
 	case Category::Unknown_Cat:
-		value = GUI::cat_unknown; break;
+		value = gui::cat_unknown; break;
 	case Category::Others:
-		value = GUI::cat_other; break;
+		value = gui::cat_other; break;
 	default:
 		LOG_WARNING(GENERAL, "SetCategoryVisibility: wrong cat <%d>", cat);
 		break;
@@ -199,66 +241,105 @@ void gui_settings::SetCategoryVisibility(int cat, const bool& val)
 	SetValue(value, val);
 }
 
-void gui_settings::ShowInfoBox(const GUI_SAVE& entry, const QString& title, const QString& text, QWidget* parent)
+void gui_settings::ShowBox(bool confirm, const QString& title, const QString& text, const gui_save& entry, int* result = nullptr, QWidget* parent = nullptr, bool always_on_top = false)
 {
-	if (GetValue(entry).toBool())
+	const std::string dialog_type = confirm ? "Confirmation" : "Info";
+
+	if (entry.name.isEmpty() || GetValue(entry).toBool())
 	{
-		QCheckBox* cb = new QCheckBox(tr("Don't show again"));
-		QMessageBox* mb = new QMessageBox(QMessageBox::Information, title, text, QMessageBox::Ok, parent);
-		mb->setCheckBox(cb);
+		const QFlags<QMessageBox::StandardButton> buttons = confirm ? QMessageBox::Yes | QMessageBox::No : QMessageBox::Ok;
+		const QMessageBox::Icon icon = confirm ? QMessageBox::Question : QMessageBox::Information;
+
+		QMessageBox* mb = new QMessageBox(icon, title, text, buttons, parent, Qt::Dialog | Qt::MSWindowsFixedSizeDialogHint | (always_on_top ? Qt::WindowStaysOnTopHint : Qt::Widget));
 		mb->deleteLater();
-		mb->exec();
-		if (mb->checkBox()->isChecked())
+
+		if (!entry.name.isEmpty())
 		{
-			SetValue(entry, false);
-			LOG_WARNING(GENERAL, "Entry %s was set to false", sstr(entry.name));
+			mb->setCheckBox(new QCheckBox(tr("Don't show again")));
 		}
+
+		connect(mb, &QMessageBox::finished, [&](int res)
+		{
+			if (result)
+			{
+				*result = res;
+			}
+			if (!entry.name.isEmpty() && mb->checkBox()->isChecked())
+			{
+				SetValue(entry, false);
+				LOG_NOTICE(GENERAL, "%s Dialog for Entry %s is now disabled", dialog_type, sstr(entry.name));
+			}
+		});
+
+		mb->exec();
 	}
-	else LOG_WARNING(GENERAL, "Entry %s is false, Info Box not shown", sstr(entry.name));
+	else LOG_NOTICE(GENERAL, "%s Dialog for Entry %s was ignored", dialog_type, sstr(entry.name));
+}
+
+void gui_settings::ShowConfirmationBox(const QString& title, const QString& text, const gui_save& entry, int* result = nullptr, QWidget* parent = nullptr)
+{
+	ShowBox(true, title, text, entry, result, parent, true);
+}
+
+void gui_settings::ShowInfoBox(const QString& title, const QString& text, const gui_save& entry, QWidget* parent = nullptr)
+{
+	ShowBox(false, title, text, entry, nullptr, parent, false);
 }
 
 void gui_settings::SetGamelistColVisibility(int col, bool val)
 {
-	// hide sound format and parental level
-	bool show = col != 8 && col != 9;
-	SetValue(GUI_SAVE(GUI::game_list, "Col" + QString::number(col) + "visible", show), val);
+	SetValue(GetGuiSaveForColumn(col), val);
 }
 
 void gui_settings::SetCustomColor(int col, const QColor& val)
 {
-	SetValue(GUI_SAVE(GUI::meta, "CustomColor" + QString::number(col), GUI::mw_tool_bar_color), val);
+	SetValue(gui_save(gui::meta, "CustomColor" + QString::number(col), gui::gl_icon_color), val);
 }
 
-void gui_settings::SaveCurrentConfig(const QString& friendlyName)
+void gui_settings::SaveCurrentConfig(const QString& friendly_name)
 {
-	SetValue(GUI::m_currentConfig, friendlyName);
-	BackupSettingsToTarget(friendlyName);
+	if (friendly_name != gui::Settings)
+	{
+		if (m_current_name == gui::Settings)
+		{
+			SetValue(gui::m_currentConfig, friendly_name);
+			m_settings.sync();
+		}
+		else
+		{
+			QSettings tmp(m_settingsDir.absoluteFilePath(gui::Settings + ".ini"), QSettings::Format::IniFormat, parent());
+			tmp.beginGroup(gui::m_currentConfig.key);
+			tmp.setValue(gui::m_currentConfig.name, friendly_name);
+			tmp.endGroup();
+		}
+	}
+
+	BackupSettingsToTarget(friendly_name);
+	ChangeToConfig(friendly_name);
 }
 
 logs::level gui_settings::GetLogLevel()
 {
-	return (logs::level) GetValue(GUI::l_level).toUInt();
+	return (logs::level) GetValue(gui::l_level).toUInt();
 }
 
 bool gui_settings::GetGamelistColVisibility(int col)
 {
-	// hide sound format and parental level
-	bool show = col != 8 && col != 9;
-	return GetValue(GUI_SAVE(GUI::game_list, "Col" + QString::number(col) + "visible", show)).toBool();
+	return GetValue(GetGuiSaveForColumn(col)).toBool();
 }
 
 QColor gui_settings::GetCustomColor(int col)
 {
-	return GetValue(GUI_SAVE(GUI::meta, "CustomColor" + QString::number(col), GUI::mw_tool_bar_color)).value<QColor>();
+	return GetValue(gui_save(gui::meta, "CustomColor" + QString::number(col), gui::gl_icon_color)).value<QColor>();
 }
 
 QStringList gui_settings::GetConfigEntries()
 {
 	QStringList nameFilter;
 	nameFilter << "*.ini";
-	QFileInfoList entries = settingsDir.entryInfoList(nameFilter, QDir::Files);
+	QFileInfoList entries = m_settingsDir.entryInfoList(nameFilter, QDir::Files);
 	QStringList res;
-	for (QFileInfo entry : entries)
+	for (const QFileInfo &entry : entries)
 	{
 		res.append(entry.baseName());
 	}
@@ -266,36 +347,59 @@ QStringList gui_settings::GetConfigEntries()
 	return res;
 }
 
-void gui_settings::BackupSettingsToTarget(const QString& friendlyName)
+void gui_settings::BackupSettingsToTarget(const QString& friendly_name)
 {	
-	QSettings target(ComputeSettingsDir() + friendlyName + ".ini", QSettings::Format::IniFormat);
-	QStringList keys = settings.allKeys();
-	for (QStringList::iterator i = keys.begin(); i != keys.end(); i++)
+	QSettings target(ComputeSettingsDir() + friendly_name + ".ini", QSettings::Format::IniFormat);
+
+	for (const QString& key : m_settings.allKeys())
 	{
-		if (!i->startsWith(GUI::meta))
+		if (!key.startsWith(gui::meta))
 		{
-			target.setValue(*i, settings.value(*i));
+			target.setValue(key, m_settings.value(key));
 		}
 	}
+
 	target.sync();
 }
 
 QStringList gui_settings::GetStylesheetEntries()
 {
-	QStringList nameFilter;
-	nameFilter << "*.qss";
-	QString path = settingsDir.absolutePath();
-	QFileInfoList entries = settingsDir.entryInfoList(nameFilter, QDir::Files);
-	QStringList res;
-	for (QFileInfo entry : entries)
-	{
-		res.append(entry.baseName());
-	}
-
+	QStringList nameFilter = QStringList("*.qss");
+	QStringList res = gui::utils::get_dir_entries(m_settingsDir, nameFilter);
+#if !defined(_WIN32)
+	// Makes stylesheets load if using AppImage (App Bundle) or installed to /usr/bin
+#ifdef __APPLE__
+	QDir platformStylesheetDir = QCoreApplication::applicationDirPath() + "/../Resources/GuiConfigs/";
+#else
+	QDir platformStylesheetDir = QCoreApplication::applicationDirPath() + "/../share/rpcs3/GuiConfigs/";
+#endif
+	res.append(gui::utils::get_dir_entries(platformStylesheetDir, nameFilter));
+	res.removeDuplicates();
+#endif
+	res.sort(Qt::CaseInsensitive);
 	return res;
 }
 
 QString gui_settings::GetCurrentStylesheetPath()
 {
-	return settingsDir.absoluteFilePath(GetValue(GUI::m_currentStylesheet).toString() + ".qss");
+	QString stylesheet = GetValue(gui::m_currentStylesheet).toString();
+
+	if (stylesheet == gui::Default)
+	{
+		return "";
+	}
+
+	return m_settingsDir.absoluteFilePath(stylesheet + ".qss");
+}
+
+QSize gui_settings::SizeFromSlider(int pos)
+{
+	return gui::gl_icon_size_min + (gui::gl_icon_size_max - gui::gl_icon_size_min) * (pos / (float)gui::gl_max_slider_pos);
+}
+
+gui_save gui_settings::GetGuiSaveForColumn(int col)
+{
+	// hide sound format, parental level, firmware version and path by default
+	bool show = col != gui::column_sound && col != gui::column_parental && col != gui::column_firmware && col != gui::column_path;
+	return gui_save{ gui::game_list, "visibility_" + gui::get_game_list_column_name((gui::game_list_columns)col), show };
 }

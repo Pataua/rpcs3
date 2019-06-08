@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <string_view>
 
 // Copy null-terminated string from std::string to char array with truncation
 template <std::size_t N>
@@ -22,6 +23,12 @@ inline void strcpy_trunc(char (&dst)[N], const char (&src)[N2])
 	const std::size_t count = N2 >= N ? N - 1 : N2;
 	std::memcpy(dst, src, count);
 	dst[count] = '\0';
+}
+
+template <std::size_t N>
+inline bool ends_with(const std::string& src, const char (&end)[N])
+{
+	return src.size() >= N - 1 && src.compare(src.size() - (N - 1), N - 1, end, N - 1) == 0;
 }
 
 namespace fmt
@@ -94,10 +101,10 @@ namespace fmt
 		auto end = source.end();
 		for (--end; it != end; ++it)
 		{
-			result += *it + separator;
+			result += std::string{*it} + separator;
 		}
 
-		return result + source.back();
+		return result + std::string{source.back()};
 	}
 
 	template <typename T>
@@ -128,6 +135,7 @@ namespace fmt
 	}
 
 	std::string to_upper(const std::string& string);
+	std::string to_lower(const std::string& string);
 
 	bool match(const std::string& source, const std::string& mask);
 }

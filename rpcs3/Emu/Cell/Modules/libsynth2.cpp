@@ -3,9 +3,9 @@
 
 #include "libsynth2.h"
 
-namespace vm { using namespace ps3; }
 
-logs::channel libsynth2("libsynth2");
+
+LOG_CHANNEL(libsynth2);
 
 s32 cellSoundSynth2Config(s16 param, s32 value)
 {

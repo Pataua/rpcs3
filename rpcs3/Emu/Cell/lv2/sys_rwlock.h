@@ -27,7 +27,7 @@ struct lv2_rwlock final : lv2_obj
 	const u64 name;
 	const s32 flags;
 
-	semaphore<> mutex;
+	shared_mutex mutex;
 	atomic_t<s64> owner{0};
 	std::deque<cpu_thread*> rq;
 	std::deque<cpu_thread*> wq;
@@ -47,7 +47,7 @@ class ppu_thread;
 
 // Syscalls
 
-error_code sys_rwlock_create(vm::ps3::ptr<u32> rw_lock_id, vm::ps3::ptr<sys_rwlock_attribute_t> attr);
+error_code sys_rwlock_create(vm::ptr<u32> rw_lock_id, vm::ptr<sys_rwlock_attribute_t> attr);
 error_code sys_rwlock_destroy(u32 rw_lock_id);
 error_code sys_rwlock_rlock(ppu_thread& ppu, u32 rw_lock_id, u64 timeout);
 error_code sys_rwlock_tryrlock(u32 rw_lock_id);

@@ -20,7 +20,7 @@ protected:
 	virtual std::string getFloatTypeName(size_t elementCount) override;
 	std::string getIntTypeName(size_t elementCount) override;
 	virtual std::string getFunction(FUNCTION) override;
-	virtual std::string compareFunction(COMPARE, const std::string&, const std::string&) override;
+	virtual std::string compareFunction(COMPARE, const std::string&, const std::string&, bool scalar) override;
 
 	virtual void insertHeader(std::stringstream &OS) override;
 	virtual void insertInputs(std::stringstream &OS, const std::vector<ParamType> &inputs) override;
@@ -30,6 +30,7 @@ protected:
 	virtual void insertMainEnd(std::stringstream &OS) override;
 
 	const RSXVertexProgram &rsx_vertex_program;
+	std::unordered_map<std::string, int> input_locations;
 public:
 	GLVertexDecompilerThread(const RSXVertexProgram &prog, std::string& shader, ParamArray&)
 		: VertexProgramDecompiler(prog)
@@ -50,6 +51,7 @@ public:
 	ParamArray parr;
 	u32 id = 0;
 	std::string shader;
+	bool interleaved;
 
 	void Decompile(const RSXVertexProgram& prog);
 	void Compile();

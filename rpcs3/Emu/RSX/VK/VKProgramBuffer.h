@@ -1,35 +1,43 @@
-#pragma once
+﻿#pragma once
 #include "VKVertexProgram.h"
 #include "VKFragmentProgram.h"
 #include "../Common/ProgramStateCache.h"
-
+#include "Utilities/hash.h"
+#include "VKHelpers.h"
+#include "VKRenderPass.h"
 
 namespace vk
 {
 	struct pipeline_props
 	{
-		VkPipelineInputAssemblyStateCreateInfo ia;
-		VkPipelineDepthStencilStateCreateInfo ds;
-		VkPipelineColorBlendAttachmentState att_state[4];
-		VkPipelineColorBlendStateCreateInfo cs;
-		VkPipelineRasterizationStateCreateInfo rs;
-		
-		VkRenderPass render_pass;
+		graphics_pipeline_state state;
 		int num_targets;
+		u64 renderpass_key;
 
 		bool operator==(const pipeline_props& other) const
 		{
-			if (memcmp(&ia, &other.ia, sizeof(VkPipelineInputAssemblyStateCreateInfo)))
+			if (memcmp(&state.att_state[0], &other.state.att_state[0], sizeof(VkPipelineColorBlendAttachmentState)))
 				return false;
-			if (memcmp(&ds, &other.ds, sizeof(VkPipelineDepthStencilStateCreateInfo)))
+
+			if (renderpass_key != other.renderpass_key)
 				return false;
-			if (memcmp(&att_state[0], &other.att_state[0], sizeof(VkPipelineColorBlendAttachmentState)))
+
+			if (memcmp(&state.rs, &other.state.rs, sizeof(VkPipelineRasterizationStateCreateInfo)))
 				return false;
-			if (memcmp(&cs, &other.cs, sizeof(VkPipelineColorBlendStateCreateInfo)))
+
+			//Cannot memcmp cs due to pAttachments being a pointer to memory
+			if (state.cs.attachmentCount != other.state.cs.attachmentCount ||
+				state.cs.flags != other.state.cs.flags ||
+				state.cs.logicOp != other.state.cs.logicOp ||
+				state.cs.logicOpEnable != other.state.cs.logicOpEnable ||
+				state.cs.sType != other.state.cs.sType ||
+				memcmp(state.cs.blendConstants, other.state.cs.blendConstants, 4 * sizeof(f32)))
 				return false;
-			if (memcmp(&rs, &other.rs, sizeof(VkPipelineRasterizationStateCreateInfo)))
+
+			if (memcmp(&state.ia, &other.state.ia, sizeof(VkPipelineInputAssemblyStateCreateInfo)))
 				return false;
-			if (render_pass != other.render_pass)
+
+			if (memcmp(&state.ds, &other.state.ds, sizeof(VkPipelineDepthStencilStateCreateInfo)))
 				return false;
 
 			return num_targets == other.num_targets;
@@ -37,33 +45,24 @@ namespace vk
 	};
 }
 
-namespace
-{
-	template<typename T>
-	size_t hash_struct(const T& structure)
-	{
-		char *data = (char*)(&structure);
-		size_t result = 0;
-		for (unsigned i = 0; i < sizeof(T); i++)
-			result ^= std::hash<char>()(data[i]);
-		return result;
-	}
-}
-
-namespace std
+namespace rpcs3
 {
 	template <>
-	struct hash<vk::pipeline_props> {
-		size_t operator()(const vk::pipeline_props &pipelineProperties) const {
-			size_t seed = hash<unsigned>()(pipelineProperties.num_targets);
-			seed ^= hash_struct(pipelineProperties.ia);
-			seed ^= hash_struct(pipelineProperties.ds);
-			seed ^= hash_struct(pipelineProperties.rs);
-			seed ^= hash_struct(pipelineProperties.cs);
-			seed ^= hash_struct(pipelineProperties.att_state[0]);
-			return hash<size_t>()(seed);
-		}
-	};
+	size_t hash_struct<vk::pipeline_props>(const vk::pipeline_props &pipelineProperties)
+	{
+		size_t seed = hash_base(pipelineProperties.num_targets);
+		seed ^= hash_struct(pipelineProperties.state.ia);
+		seed ^= hash_struct(pipelineProperties.state.ds);
+		seed ^= hash_struct(pipelineProperties.state.rs);
+
+		// Do not compare pointers to memory!
+		VkPipelineColorBlendStateCreateInfo tmp;
+		memcpy(&tmp, &pipelineProperties.state.cs, sizeof(VkPipelineColorBlendStateCreateInfo));
+		tmp.pAttachments = nullptr;
+
+		seed ^= hash_struct(pipelineProperties.state.att_state[0]);
+		return hash_base(seed);
+	}
 }
 
 struct VKTraits
@@ -74,26 +73,35 @@ struct VKTraits
 	using pipeline_properties = vk::pipeline_props;
 
 	static
-	void recompile_fragment_program(const RSXFragmentProgram &RSXFP, fragment_program_type& fragmentProgramData, size_t /*ID*/)
+	void recompile_fragment_program(const RSXFragmentProgram &RSXFP, fragment_program_type& fragmentProgramData, size_t ID)
 	{
 		fragmentProgramData.Decompile(RSXFP);
+		fragmentProgramData.id = static_cast<u32>(ID);
 		fragmentProgramData.Compile();
 	}
 
 	static
-	void recompile_vertex_program(const RSXVertexProgram &RSXVP, vertex_program_type& vertexProgramData, size_t /*ID*/)
+	void recompile_vertex_program(const RSXVertexProgram &RSXVP, vertex_program_type& vertexProgramData, size_t ID)
 	{
 		vertexProgramData.Decompile(RSXVP);
+		vertexProgramData.id = static_cast<u32>(ID);
 		vertexProgramData.Compile();
 	}
 
 	static
-	pipeline_storage_type build_pipeline(const vertex_program_type &vertexProgramData, const fragment_program_type &fragmentProgramData, const vk::pipeline_props &pipelineProperties, VkDevice dev, VkPipelineLayout common_pipeline_layout)
+	void validate_pipeline_properties(const VKVertexProgram&, const VKFragmentProgram &fp, vk::pipeline_props& properties)
 	{
-//		pstate.dynamic_state.pDynamicStates = pstate.dynamic_state_descriptors;
-//		pstate.cb.pAttachments = pstate.att_state;
-//		pstate.cb.attachmentCount = pstate.num_targets;
+		//Explicitly disable writing to undefined registers
+		properties.state.att_state[0].colorWriteMask &= fp.output_color_masks[0];
+		properties.state.att_state[1].colorWriteMask &= fp.output_color_masks[1];
+		properties.state.att_state[2].colorWriteMask &= fp.output_color_masks[2];
+		properties.state.att_state[3].colorWriteMask &= fp.output_color_masks[3];
+	}
 
+	static
+	pipeline_storage_type build_pipeline(const vertex_program_type &vertexProgramData, const fragment_program_type &fragmentProgramData,
+			const vk::pipeline_props &pipelineProperties, VkDevice dev, VkPipelineLayout common_pipeline_layout)
+	{
 		VkPipelineShaderStageCreateInfo shader_stages[2] = {};
 		shader_stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		shader_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -111,6 +119,12 @@ struct VKTraits
 		dynamic_state_descriptors[dynamic_state_info.dynamicStateCount++] = VK_DYNAMIC_STATE_VIEWPORT;
 		dynamic_state_descriptors[dynamic_state_info.dynamicStateCount++] = VK_DYNAMIC_STATE_SCISSOR;
 		dynamic_state_descriptors[dynamic_state_info.dynamicStateCount++] = VK_DYNAMIC_STATE_LINE_WIDTH;
+		dynamic_state_descriptors[dynamic_state_info.dynamicStateCount++] = VK_DYNAMIC_STATE_DEPTH_BOUNDS;
+		dynamic_state_descriptors[dynamic_state_info.dynamicStateCount++] = VK_DYNAMIC_STATE_BLEND_CONSTANTS;
+		dynamic_state_descriptors[dynamic_state_info.dynamicStateCount++] = VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK;
+		dynamic_state_descriptors[dynamic_state_info.dynamicStateCount++] = VK_DYNAMIC_STATE_STENCIL_WRITE_MASK;
+		dynamic_state_descriptors[dynamic_state_info.dynamicStateCount++] = VK_DYNAMIC_STATE_STENCIL_REFERENCE;
+		dynamic_state_descriptors[dynamic_state_info.dynamicStateCount++] = VK_DYNAMIC_STATE_DEPTH_BIAS;
 		dynamic_state_info.pDynamicStates = dynamic_state_descriptors;
 
 		VkPipelineVertexInputStateCreateInfo vi = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
@@ -125,39 +139,83 @@ struct VKTraits
 		ms.pSampleMask = NULL;
 		ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
+		// Rebase pointers from pipeline structure in case it is moved/copied
+		VkPipelineColorBlendStateCreateInfo cs = pipelineProperties.state.cs;
+		cs.pAttachments = pipelineProperties.state.att_state;
+
 		VkPipeline pipeline;
 		VkGraphicsPipelineCreateInfo info = {};
 		info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 		info.pVertexInputState = &vi;
-		info.pInputAssemblyState = &pipelineProperties.ia;
-		info.pRasterizationState = &pipelineProperties.rs;
-		info.pColorBlendState = &pipelineProperties.cs;
+		info.pInputAssemblyState = &pipelineProperties.state.ia;
+		info.pRasterizationState = &pipelineProperties.state.rs;
+		info.pColorBlendState = &cs;
 		info.pMultisampleState = &ms;
 		info.pViewportState = &vp;
-		info.pDepthStencilState = &pipelineProperties.ds;
+		info.pDepthStencilState = &pipelineProperties.state.ds;
 		info.stageCount = 2;
 		info.pStages = shader_stages;
 		info.pDynamicState = &dynamic_state_info;
 		info.layout = common_pipeline_layout;
 		info.basePipelineIndex = -1;
 		info.basePipelineHandle = VK_NULL_HANDLE;
-		info.renderPass = pipelineProperties.render_pass;
+		info.renderPass = vk::get_renderpass(dev, pipelineProperties.renderpass_key);
 
 		CHECK_RESULT(vkCreateGraphicsPipelines(dev, nullptr, 1, &info, NULL, &pipeline));
 
 		pipeline_storage_type result = std::make_unique<vk::glsl::program>(dev, pipeline, vertexProgramData.uniforms, fragmentProgramData.uniforms);
-
+		result->link();
 		return result;
 	}
 };
 
-class VKProgramBuffer : public program_state_cache<VKTraits>
+struct VKProgramBuffer : public program_state_cache<VKTraits>
 {
-public:
+	VKProgramBuffer() = default;
+
 	void clear()
 	{
 		program_state_cache<VKTraits>::clear();
 		m_vertex_shader_cache.clear();
 		m_fragment_shader_cache.clear();
+	}
+
+	u64 get_hash(vk::pipeline_props &props)
+	{
+		return rpcs3::hash_struct<vk::pipeline_props>(props);
+	}
+
+	u64 get_hash(RSXVertexProgram &prog)
+	{
+		return program_hash_util::vertex_program_utils::get_vertex_program_ucode_hash(prog);
+	}
+
+	u64 get_hash(RSXFragmentProgram &prog)
+	{
+		return program_hash_util::fragment_program_utils::get_fragment_program_ucode_hash(prog);
+	}
+
+	template <typename... Args>
+	void add_pipeline_entry(RSXVertexProgram &vp, RSXFragmentProgram &fp, vk::pipeline_props &props, Args&& ...args)
+	{
+		vp.skip_vertex_input_check = true;
+		get_graphics_pipeline(vp, fp, props, false, std::forward<Args>(args)...);
+	}
+
+    void preload_programs(RSXVertexProgram &vp, RSXFragmentProgram &fp)
+    {
+        vp.skip_vertex_input_check = true;
+        search_vertex_program(vp);
+        search_fragment_program(fp);
+    }
+
+	bool check_cache_missed() const
+	{
+		return m_cache_miss_flag;
+	}
+
+	bool check_program_linked_flag() const
+	{
+		return m_program_compiled_flag;
 	}
 };
